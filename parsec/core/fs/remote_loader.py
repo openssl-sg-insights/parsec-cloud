@@ -46,6 +46,7 @@ from parsec._parsec import (
     VlobListVersionsRepNotAllowed,
     VlobListVersionsRepNotFound,
 )
+from parsec.core.fs.storage.workspace_storage import AnyWorkspaceStorage
 
 from parsec.crypto import HashDigest, CryptoError, VerifyKey
 from parsec.utils import open_service_nursery
@@ -427,7 +428,7 @@ class RemoteLoader(UserRemoteLoader):
         get_previous_workspace_entry: Callable[[], Awaitable[Optional[WorkspaceEntry]]],
         backend_cmds: BackendAuthenticatedCmds,
         remote_devices_manager: RemoteDevicesManager,
-        local_storage: BaseWorkspaceStorage,
+        local_storage: AnyWorkspaceStorage,
     ):
         super().__init__(
             device,
