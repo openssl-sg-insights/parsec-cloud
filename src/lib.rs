@@ -12,6 +12,7 @@ mod local_manifest;
 mod manifest;
 mod protocol;
 mod runtime;
+mod storage;
 mod time;
 mod trustchain;
 
@@ -94,6 +95,8 @@ fn entrypoint(_py: Python, m: &PyModule) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(manifest::manifest_verify_and_load, m)?)?;
     m.add_function(wrap_pyfunction!(manifest::manifest_unverified_load, m)?)?;
+
+    m.add_class::<storage::WorkspaceStorage>()?;
 
     // Block
     m.add_class::<protocol::BlockCreateReq>()?;
