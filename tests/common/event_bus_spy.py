@@ -1,5 +1,6 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
 
+from typing import Type
 import pytest
 import trio
 import attr
@@ -286,7 +287,7 @@ class SpiedEventBus(EventBus):
 
 
 @pytest.fixture(scope="session")
-def event_bus_factory():
+def event_bus_factory() -> Type[SpiedEventBus]:
     return SpiedEventBus
 
 
