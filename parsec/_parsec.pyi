@@ -86,7 +86,11 @@ from parsec._parsec_pyi.trustchain import TrustchainContext
 
 from parsec._parsec_pyi.local_device import LocalDevice, UserInfo, DeviceInfo
 
-from parsec._parsec_pyi.storage import WorkspaceStorage, PseudoFileDescriptor
+from parsec._parsec_pyi.storage import (
+    WorkspaceStorage,
+    PseudoFileDescriptor,
+    workspace_storage_non_speculative_init,
+)
 
 from parsec._parsec_pyi.file_operation import (
     prepare_read,
@@ -481,6 +485,7 @@ __all__ = [
     # Storage
     "WorkspaceStorage",
     "PseudoFileDescriptor",
+    "workspace_storage_non_speculative_init",
     # File Operations
     "prepare_read",
     "prepare_reshape",
