@@ -94,14 +94,26 @@ pub struct ManifestStorage {
     pub realm_id: EntryID,
     /// This cache contains all the manifests that have been set or accessed
     /// since the last call to `clear_memory_cache`
-    pub(crate) cache: Arc<Mutex<HashMap<EntryID, LocalManifest>>>,
-    /// This dictionary keeps track of all the entry ids of the manifests
-    /// that have been added to the cache but still needs to be written to
-    /// the conn. The corresponding value is a set with the ids of all
-    /// the chunks that needs to be removed from the conn after the
-    /// manifest is written. Note: this set might be empty but the manifest
-    /// still requires to be flushed.
-    cache_ahead_of_localdb: Arc<Mutex<HashMap<EntryID, HashSet<ChunkOrBlockID>>>>,
+    caches: Arc<Mutex<HashMap<EntryID, Arc<Mutex<CacheEntry>>>>>,
+}
+
+/// A cache entry that may contain a manifest and its pending chunk.
+#[derive(Default)]
+pub(crate) struct CacheEntry {
+    /// The current manifest for the cache.
+    pub(crate) manifest: Option<LocalManifest>,
+    /// The set of entries ids that are pending to be written.
+    ///
+    /// > Note: this set might be empty but the manifest
+    /// > still requires to be flushed.
+    pending_chunk_ids: Option<HashSet<ChunkOrBlockID>>,
+}
+
+impl CacheEntry {
+    /// Return `true` if we have chunk that need to be push to the local database.
+    pub fn has_chunk_to_be_flush(&self) -> bool {
+        self.pending_chunk_ids.is_some()
+    }
 }
 
 impl Drop for ManifestStorage {
@@ -121,8 +133,7 @@ impl ManifestStorage {
             local_symkey,
             conn,
             realm_id,
-            cache: Arc::new(Mutex::new(HashMap::new())),
-            cache_ahead_of_localdb: Arc::new(Mutex::new(HashMap::new())),
+            caches: Arc::new(Mutex::new(HashMap::default())),
         };
         instance.create_db()?;
         Ok(instance)
@@ -195,15 +206,18 @@ impl ManifestStorage {
     }
 
     pub fn clear_memory_cache(&self, flush: bool) -> FSResult<()> {
+        let mut caches_lock = self.caches.lock().expect("Mutex is poisoned");
+        let drained = caches_lock.drain();
         if flush {
-            self.flush_cache_ahead_of_persistance()?;
-        }
-        self.cache_ahead_of_localdb
-            .lock()
-            .expect("Mutex is poisoned")
-            .clear();
-        self.cache.lock().expect("Mutex is poisoned").clear();
+            let items = drained
+                .map(|(entry_id, entry)| (entry_id, entry))
+                .collect::<Vec<(EntryID, Arc<Mutex<CacheEntry>>)>>();
 
+            drop(caches_lock);
+            for (entry_id, lock) in items {
+                self.ensure_manifest_persistent_lock(entry_id, lock)?;
+            }
+        }
         Ok(())
     }
 
@@ -332,19 +346,22 @@ impl ManifestStorage {
 
     pub fn get_need_sync_entries(&self) -> FSResult<(HashSet<EntryID>, HashSet<EntryID>)> {
         let mut remote_changes = HashSet::new();
-        let mut local_changes = HashSet::<_, RandomState>::from_iter(
-            self.cache
-                .lock()
-                .expect("Mutex is poisoned")
-                .iter()
-                .filter_map(|(id, manifest)| {
-                    if manifest.need_sync() {
-                        Some(*id)
-                    } else {
-                        None
-                    }
-                }),
-        );
+        let caches = self.caches.lock().expect("Mutex is poisoned").clone();
+        let mut local_changes =
+            HashSet::<_, RandomState>::from_iter(caches.iter().filter_map(|(id, cache)| {
+                if cache
+                    .lock()
+                    .expect("Mutex is poisoned")
+                    .manifest
+                    .as_ref()
+                    .map(|manifest| manifest.need_sync())
+                    .unwrap_or_default()
+                {
+                    Some(*id)
+                } else {
+                    None
+                }
+            }));
 
         let conn = &mut *self.conn.lock().expect("Mutex is poisoned");
         for (manifest_id, need_sync, bv, rv) in vlobs::table
@@ -379,12 +396,27 @@ impl ManifestStorage {
         Ok((local_changes, remote_changes))
     }
 
+    /// Get a cache entry identified by `entry_id`.
+    /// If the cache is not present it will insert it then return it (see `or_default`).
+    pub(crate) fn get_or_insert_default_cache_entry(
+        &self,
+        entry_id: EntryID,
+    ) -> Arc<Mutex<CacheEntry>> {
+        self.caches
+            .lock()
+            .expect("Mutex is poisoned")
+            .entry(entry_id)
+            .or_default()
+            .clone()
+    }
     // Manifest operations
 
     pub fn get_manifest(&self, entry_id: EntryID) -> FSResult<LocalManifest> {
         // Look in cache first
-        if let Some(manifest) = self.cache.lock().expect("Mutex is poisoned").get(&entry_id) {
-            return Ok(manifest.clone());
+        let cache_entry = self.get_or_insert_default_cache_entry(entry_id);
+        let mut cache_unlock = cache_entry.lock().expect("Mutex is poisoned");
+        if let Some(manifest) = cache_unlock.manifest.clone() {
+            return Ok(manifest);
         }
 
         // Look into the database
@@ -398,13 +430,24 @@ impl ManifestStorage {
         let manifest = LocalManifest::decrypt_and_load(&manifest, &self.local_symkey)
             .map_err(|_| FSError::Crypto(CryptoError::Decryption))?;
 
-        // Fill the cache
-        self.cache
-            .lock()
-            .expect("Mutex is poisoned")
-            .insert(entry_id, manifest.clone());
+        cache_unlock.manifest = Some(manifest.clone());
 
         Ok(manifest)
+    }
+
+    /// Get a cached manifest.
+    pub fn get_cached_manifest(&self, entry_id: EntryID) -> Option<LocalManifest> {
+        let cache_entry = {
+            self.caches
+                .lock()
+                .expect("Mutex is poisoned")
+                .get(&entry_id)
+                .cloned()
+        };
+        cache_entry.and_then(|entry| {
+            let unlock = entry.lock().expect("Mutex is poisoned");
+            unlock.manifest.clone()
+        })
     }
 
     pub fn set_manifest(
@@ -414,124 +457,116 @@ impl ManifestStorage {
         cache_only: bool,
         removed_ids: Option<HashSet<ChunkOrBlockID>>,
     ) -> FSResult<()> {
-        // Set the cache first
-        self.cache
-            .lock()
-            .expect("Mutex is poisoned")
-            .insert(entry_id, manifest);
-        // Tag the entry as ahead of localdb
-        if self
-            .cache_ahead_of_localdb
-            .lock()
-            .expect("Mutex is poisoned")
-            .get(&entry_id)
-            .is_none()
-        {
-            self.cache_ahead_of_localdb
-                .lock()
-                .expect("Mutex is poisoned")
-                .insert(entry_id, HashSet::new());
-        }
+        let cache_entry = self.get_or_insert_default_cache_entry(entry_id);
+        let mut cache_unlock = cache_entry.lock().expect("Mutex is poisoned");
 
-        // Cleanup
+        cache_unlock.manifest = Some(manifest);
+        let pending_chunk_ids = cache_unlock
+            .pending_chunk_ids
+            .get_or_insert(HashSet::default());
         if let Some(removed_ids) = &removed_ids {
-            let value = self
-                .cache_ahead_of_localdb
-                .lock()
-                .expect("Mutex is poisoned")
-                .get(&entry_id)
-                .unwrap()
-                | removed_ids;
-
-            self.cache_ahead_of_localdb
-                .lock()
-                .expect("Mutex is poisoned")
-                .insert(entry_id, value);
+            *pending_chunk_ids = (pending_chunk_ids as &HashSet<ChunkOrBlockID>) | removed_ids;
         }
-
         // Flush the cached value to the localdb
         if !cache_only {
-            self.ensure_manifest_persistent(entry_id)?;
+            self.ensure_manifest_persistent_unlock(entry_id, &mut cache_unlock)?;
         }
+
         Ok(())
     }
 
     pub fn ensure_manifest_persistent(&self, entry_id: EntryID) -> FSResult<()> {
-        let mut cache_ahead_of_localdb = self
-            .cache_ahead_of_localdb
+        if let Some(cache_entry) = self
+            .caches
             .lock()
-            .expect("Mutex is poisoned");
-        let cache = self.cache.lock().expect("Mutex is poisoned");
-        match (cache_ahead_of_localdb.get(&entry_id), cache.get(&entry_id)) {
-            (Some(pending_chunk_ids), Some(manifest)) => {
-                let ciphered = manifest.dump_and_encrypt(&self.local_symkey);
-                let pending_chunk_ids = pending_chunk_ids
-                    .iter()
-                    .map(|chunk_id| chunk_id.as_ref())
-                    .collect::<Vec<_>>();
-
-                let vlob_id = (*entry_id).as_ref();
-
-                let conn = &mut *self.conn.lock().expect("Mutex is poisoned");
-                sql_query("INSERT OR REPLACE INTO vlobs (vlob_id, blob, need_sync, base_version, remote_version)
-                    VALUES (
-                    ?, ?, ?, ?,
-                        max(
-                            ?,
-                            IFNULL((SELECT remote_version FROM vlobs WHERE vlob_id=?), 0)
-                        )
-                    )")
-                    .bind::<diesel::sql_types::Binary, _>(vlob_id)
-                    .bind::<diesel::sql_types::Binary, _>(ciphered)
-                    .bind::<diesel::sql_types::Bool, _>(manifest.need_sync())
-                    .bind::<diesel::sql_types::BigInt, _>(manifest.base_version() as i64)
-                    .bind::<diesel::sql_types::BigInt, _>(manifest.base_version() as i64)
-                    .bind::<diesel::sql_types::Binary, _>(vlob_id)
-                    .execute(conn)
-                    .map_err(|e| FSError::InsertTable(format!("vlobs: ensure_manifest_persistent {e}")))?;
-
-                for pending_chunk_ids_chunk in pending_chunk_ids.chunks(SQLITE_MAX_VARIABLE_NUMBER)
-                {
-                    diesel::delete(
-                        chunks::table.filter(chunks::chunk_id.eq_any(pending_chunk_ids_chunk)),
-                    )
-                    .execute(conn)
-                    .map_err(|e| FSError::DeleteTable(format!("chunks: clear_manifest {e}")))?;
-                }
-                cache_ahead_of_localdb.remove(&entry_id);
-                Ok(())
-            }
-            _ => Ok(()),
+            .expect("Mutex is poisoned")
+            .get(&entry_id)
+            .cloned()
+        {
+            self.ensure_manifest_persistent_lock(entry_id, cache_entry)
+        } else {
+            Ok(())
         }
     }
 
-    pub fn flush_cache_ahead_of_persistance(&self) -> FSResult<()> {
-        let keys = self
-            .cache_ahead_of_localdb
-            .lock()
-            .expect("Mutex is poisoned")
-            .keys()
-            .copied()
-            .collect::<Vec<_>>();
-        for entry_id in keys {
-            self.ensure_manifest_persistent(entry_id)?;
-        }
+    fn ensure_manifest_persistent_lock(
+        &self,
+        entry_id: EntryID,
+        cache_lock: Arc<Mutex<CacheEntry>>,
+    ) -> FSResult<()> {
+        self.ensure_manifest_persistent_unlock(
+            entry_id,
+            &mut cache_lock.lock().expect("Mutex is poisoned"),
+        )
+    }
 
+    fn ensure_manifest_persistent_unlock(
+        &self,
+        entry_id: EntryID,
+        cache: &mut CacheEntry,
+    ) -> FSResult<()> {
+        if let (Some(manifest), Some(ref pending_chunk_ids)) =
+            (&mut cache.manifest, &mut cache.pending_chunk_ids)
+        {
+            let ciphered = manifest.dump_and_encrypt(&self.local_symkey);
+            let pending_chunk_ids = pending_chunk_ids
+                .iter()
+                .map(|chunk_id| chunk_id.as_ref())
+                .collect::<Vec<_>>();
+
+            let vlob_id = (*entry_id).as_ref();
+
+            let conn = &mut *self.conn.lock().expect("Mutex is poisoned");
+            sql_query("INSERT OR REPLACE INTO vlobs (vlob_id, blob, need_sync, base_version, remote_version)
+                        VALUES (
+                        ?, ?, ?, ?,
+                            max(
+                                ?,
+                                IFNULL((SELECT remote_version FROM vlobs WHERE vlob_id=?), 0)
+                            )
+                        )")
+                        .bind::<diesel::sql_types::Binary, _>(vlob_id)
+                        .bind::<diesel::sql_types::Binary, _>(ciphered)
+                        .bind::<diesel::sql_types::Bool, _>(manifest.need_sync())
+                        .bind::<diesel::sql_types::BigInt, _>(manifest.base_version() as i64)
+                        .bind::<diesel::sql_types::BigInt, _>(manifest.base_version() as i64)
+                        .bind::<diesel::sql_types::Binary, _>(vlob_id)
+                        .execute(conn)
+                        .map_err(|e| FSError::InsertTable(format!("vlobs: ensure_manifest_persistent {e}")))?;
+
+            for pending_chunk_ids_chunk in pending_chunk_ids.chunks(SQLITE_MAX_VARIABLE_NUMBER) {
+                diesel::delete(
+                    chunks::table.filter(chunks::chunk_id.eq_any(pending_chunk_ids_chunk)),
+                )
+                .execute(conn)
+                .map_err(|e| FSError::DeleteTable(format!("chunks: clear_manifest {e}")))?;
+            }
+            cache.pending_chunk_ids = None;
+        }
         Ok(())
     }
 
-    // This method is not used in the code base but it is still tested
-    // as it might come handy in a cleanup routine later
+    pub fn flush_cache_ahead_of_persistance(&self) -> FSResult<()> {
+        let items = self
+            .caches
+            .lock()
+            .expect("Mutex is poisoned")
+            .iter()
+            .map(|(entry_id, entry)| (*entry_id, entry.clone()))
+            .collect::<Vec<(EntryID, Arc<Mutex<CacheEntry>>)>>();
+        for (entry_id, lock) in items {
+            self.ensure_manifest_persistent_lock(entry_id, lock)?;
+        }
+        Ok(())
+    }
 
+    /// This method is not used in the code base but it is still tested
+    /// as it might come handy in a cleanup routine later
     #[deprecated]
     pub fn clear_manifest(&self, entry_id: EntryID) -> FSResult<()> {
         // Remove from cache
-        let in_cache = self
-            .cache
-            .lock()
-            .expect("Mutex is poisoned")
-            .remove(&entry_id)
-            .is_some();
+        let cache_entry = self.get_or_insert_default_cache_entry(entry_id);
+        let mut cache_unlock = cache_entry.lock().expect("Mutex is poisoned");
 
         // Remove from local database
         let conn = &mut *self.conn.lock().expect("Mutex is poisoned");
@@ -540,12 +575,7 @@ impl ManifestStorage {
             .map_err(|e| FSError::DeleteTable(format!("vlobs: clear_manifest {e}")))?
             > 0;
 
-        if let Some(pending_chunk_ids) = self
-            .cache_ahead_of_localdb
-            .lock()
-            .expect("Mutex is poisoned")
-            .remove(&entry_id)
-        {
+        if let Some(pending_chunk_ids) = &cache_unlock.pending_chunk_ids {
             let pending_chunk_ids = pending_chunk_ids
                 .iter()
                 .map(ChunkOrBlockID::as_ref)
@@ -559,8 +589,12 @@ impl ManifestStorage {
                 .map_err(|e| FSError::DeleteTable(format!("chunks: clear_manifest {e}")))?;
             }
         }
+        let is_manifest_cached = cache_unlock.manifest.is_some();
 
-        if !deleted && !in_cache {
+        cache_unlock.manifest = None;
+        cache_unlock.pending_chunk_ids = None;
+
+        if !deleted && !is_manifest_cached {
             return Err(FSError::LocalMiss(*entry_id));
         }
 
@@ -572,11 +606,17 @@ impl ManifestStorage {
     ///
     /// For more information see [ManifestStorage::cache_ahead_of_localdb].
     pub fn is_manifest_cache_ahead_of_persistance(&self, entry_id: &EntryID) -> bool {
-        self.cache_ahead_of_localdb
+        self.caches
             .lock()
             .expect("Mutex is poisoned")
-            .keys()
-            .any(|cached_entry_id| cached_entry_id == entry_id)
+            .get(entry_id)
+            .map(|entry| {
+                entry
+                    .lock()
+                    .expect("Mutex is poisoned")
+                    .has_chunk_to_be_flush()
+            })
+            .unwrap_or(false)
     }
 }
 
