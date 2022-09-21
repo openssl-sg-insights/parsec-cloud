@@ -181,8 +181,7 @@ impl ManifestStorage {
         // Set the default "prevent sync" pattern if it doesn't exist
         diesel::insert_or_ignore_into(prevent_sync_pattern::table)
             .values(pattern)
-            .execute(conn)
-            .map_err(|e| FSError::InsertTable(format!("prevent_sync_pattern: create_db {e}")))?;
+            .execute(conn)?;
 
         Ok(())
     }
@@ -190,17 +189,11 @@ impl ManifestStorage {
     #[cfg(test)]
     fn drop_db(&self) -> FSResult<()> {
         let conn = &mut *self.conn.lock().expect("Mutex is poisoned");
-        sql_query("DROP TABLE IF EXISTS vlobs;")
-            .execute(conn)
-            .map_err(|e| FSError::DropTable(format!("vlobs {e}")))?;
+        sql_query("DROP TABLE IF EXISTS vlobs;").execute(conn)?;
 
-        sql_query("DROP TABLE IF EXISTS realm_checkpoints;")
-            .execute(conn)
-            .map_err(|e| FSError::DropTable(format!("realm_checkpoints {e}")))?;
+        sql_query("DROP TABLE IF EXISTS realm_checkpoints;").execute(conn)?;
 
-        sql_query("DROP TABLE IF EXISTS prevent_sync_pattern;")
-            .execute(conn)
-            .map_err(|e| FSError::DropTable(format!("prevent_sync_pattern {e}")))?;
+        sql_query("DROP TABLE IF EXISTS prevent_sync_pattern;").execute(conn)?;
 
         Ok(())
     }
@@ -336,10 +329,7 @@ impl ManifestStorage {
             .on_conflict(realm_checkpoint::_id)
             .do_update()
             .set(&new_realm_checkpoint)
-            .execute(conn)
-            .map_err(|e| {
-                FSError::InsertTable(format!("realm_checkpoint: update_realm_checkpoint {e}"))
-            })?;
+            .execute(conn)?;
 
         Ok(())
     }
@@ -531,15 +521,13 @@ impl ManifestStorage {
                         .bind::<diesel::sql_types::BigInt, _>(manifest.base_version() as i64)
                         .bind::<diesel::sql_types::BigInt, _>(manifest.base_version() as i64)
                         .bind::<diesel::sql_types::Binary, _>(vlob_id)
-                        .execute(conn)
-                        .map_err(|e| FSError::InsertTable(format!("vlobs: ensure_manifest_persistent {e}")))?;
+                        .execute(conn) ?;
 
             for pending_chunk_ids_chunk in pending_chunk_ids.chunks(SQLITE_MAX_VARIABLE_NUMBER) {
                 diesel::delete(
                     chunks::table.filter(chunks::chunk_id.eq_any(pending_chunk_ids_chunk)),
                 )
-                .execute(conn)
-                .map_err(|e| FSError::DeleteTable(format!("chunks: clear_manifest {e}")))?;
+                .execute(conn)?;
             }
             cache.pending_chunk_ids = None;
         }
@@ -571,8 +559,7 @@ impl ManifestStorage {
         // Remove from local database
         let conn = &mut *self.conn.lock().expect("Mutex is poisoned");
         let deleted = diesel::delete(vlobs::table.filter(vlobs::vlob_id.eq((*entry_id).as_ref())))
-            .execute(conn)
-            .map_err(|e| FSError::DeleteTable(format!("vlobs: clear_manifest {e}")))?
+            .execute(conn)?
             > 0;
 
         if let Some(pending_chunk_ids) = &cache_unlock.pending_chunk_ids {
@@ -585,8 +572,7 @@ impl ManifestStorage {
                 diesel::delete(
                     chunks::table.filter(chunks::chunk_id.eq_any(pending_chunk_ids_chunk)),
                 )
-                .execute(conn)
-                .map_err(|e| FSError::DeleteTable(format!("chunks: clear_manifest {e}")))?;
+                .execute(conn)?;
             }
         }
         let is_manifest_cached = cache_unlock.manifest.is_some();

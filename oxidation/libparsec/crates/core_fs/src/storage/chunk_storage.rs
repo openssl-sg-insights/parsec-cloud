@@ -51,17 +51,14 @@ pub(crate) trait ChunkStorageTrait {
                 data BLOB NOT NULL
             );",
         )
-        .execute(conn)
-        .map_err(|e| FSError::CreateTable(format!("chunks {e}")))?;
+        .execute(conn)?;
         Ok(())
     }
 
     #[cfg(test)]
     fn drop_db(&self) -> FSResult<()> {
         let conn = &mut *self.conn().lock().expect("Mutex is poisoned");
-        sql_query("DROP TABLE IF EXISTS chunks;")
-            .execute(conn)
-            .map_err(|e| FSError::DropTable(format!("chunks {e}")))?;
+        sql_query("DROP TABLE IF EXISTS chunks;").execute(conn)?;
         Ok(())
     }
 
@@ -176,8 +173,7 @@ pub(crate) trait ChunkStorageTrait {
             .on_conflict(chunks::chunk_id)
             .do_update()
             .set(&new_chunk)
-            .execute(conn)
-            .map_err(|e| FSError::InsertTable(format!("chunks: set_chunk {e}")))?;
+            .execute(conn)?;
         Ok(())
     }
 
@@ -185,8 +181,7 @@ pub(crate) trait ChunkStorageTrait {
         let conn = &mut *self.conn().lock().expect("Mutex is poisoned");
         let changes =
             diesel::delete(chunks::table.filter(chunks::chunk_id.eq((*chunk_id).as_ref())))
-                .execute(conn)
-                .map_err(|e| FSError::DeleteTable(format!("chunks: clear_chunk {e}")))?
+                .execute(conn)?
                 > 0;
 
         if !changes {
@@ -216,9 +211,7 @@ pub(crate) trait BlockStorageTrait: ChunkStorageTrait {
 
     fn clear_all_blocks(&self) -> FSResult<()> {
         let conn = &mut *self.conn().lock().expect("Mutex is poisoned");
-        diesel::delete(chunks::table)
-            .execute(conn)
-            .map_err(|e| FSError::DeleteTable(format!("chunks: clear_all_blocks {e}")))?;
+        diesel::delete(chunks::table).execute(conn)?;
         Ok(())
     }
 
@@ -242,8 +235,7 @@ pub(crate) trait BlockStorageTrait: ChunkStorageTrait {
             .on_conflict(chunks::chunk_id)
             .do_update()
             .set(&new_chunk)
-            .execute(&mut *self.conn().lock().expect("Mutex is poisoned"))
-            .map_err(|e| FSError::InsertTable(format!("chunks: set_chunk {e}")))?;
+            .execute(&mut *self.conn().lock().expect("Mutex is poisoned"))?;
 
         // Perform cleanup if necessary
         self.cleanup()
@@ -275,9 +267,7 @@ pub(crate) trait BlockStorageTrait: ChunkStorageTrait {
             .limit(limit)
             .into_boxed();
 
-        diesel::delete(chunks::table.filter(chunks::chunk_id.eq_any(sub_query)))
-            .execute(conn)
-            .map_err(|e| FSError::DeleteTable(format!("chunks: cleanup {e}")))?;
+        diesel::delete(chunks::table.filter(chunks::chunk_id.eq_any(sub_query))).execute(conn)?;
 
         Ok(())
     }
