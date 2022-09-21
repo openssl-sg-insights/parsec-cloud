@@ -1,6 +1,11 @@
 // Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 (eventually AGPL-3.0) 2016-present Scille SAS
 
-use pyo3::{exceptions::PyValueError, import_exception, prelude::*, types::PyBytes};
+use pyo3::{
+    import_exception,
+    prelude::{pyclass, pyfunction, pymethods, IntoPy, PyAny, PyObject, PyResult, Python},
+    types::PyBytes,
+    PyErr,
+};
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -16,8 +21,13 @@ use crate::{
     time::DateTime,
 };
 
+use libparsec::core_fs::FSError;
+
 import_exception!(parsec.core.fs.exceptions, FSLocalMissError);
 import_exception!(parsec.core.fs.exceptions, FSInvalidFileDescriptor);
+import_exception!(parsec.core.fs.exceptions, FSLocalStorageOperationError);
+import_exception!(parsec.core.fs.exceptions, FSLocalStorageClosedError);
+import_exception!(parsec.core.fs.exceptions, FSInternalError);
 
 /// WorkspaceStorage's binding is implemented with allow_threads because its
 /// methods are called in trio.to_thread to connect the sync and async world
@@ -49,7 +59,7 @@ impl WorkspaceStorage {
                 workspace_id.0,
                 cache_size,
             )
-            .map_err(|e| PyValueError::new_err(e.to_string()))?,
+            .map_err(fs_to_python_error)?,
             None,
         ))
     }
@@ -60,7 +70,7 @@ impl WorkspaceStorage {
         py.allow_threads(|| {
             self.0
                 .set_prevent_sync_pattern(&pattern)
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                .map_err(fs_to_python_error)?;
             Ok(())
         })
     }
@@ -70,7 +80,7 @@ impl WorkspaceStorage {
         py.allow_threads(|| {
             self.0
                 .mark_prevent_sync_pattern_fully_applied(&pattern)
-                .map_err(|e| PyValueError::new_err(e.to_string()))
+                .map_err(fs_to_python_error)
         })
     }
 
@@ -78,7 +88,7 @@ impl WorkspaceStorage {
         if let Some(regex) = &self.1 {
             regex
                 .cast_as::<PyAny>(py)
-                .map_err(|_| PyValueError::new_err("Impossible to fail"))
+                .map_err(|_| FSInternalError::new_err("Impossible to fail"))
         } else {
             let prevent_sync_pattern = py.allow_threads(|| self.0.get_prevent_sync_pattern());
             rs_to_py_regex(py, &prevent_sync_pattern)
@@ -94,7 +104,7 @@ impl WorkspaceStorage {
             Ok(LocalWorkspaceManifest(
                 self.0
                     .get_workspace_manifest()
-                    .map_err(|e| PyValueError::new_err(e.to_string()))?,
+                    .map_err(fs_to_python_error)?,
             ))
         })
     }
@@ -152,7 +162,7 @@ impl WorkspaceStorage {
                             .collect()
                     }),
                 )
-                .map_err(|e| PyValueError::new_err(e.to_string()))
+                .map_err(fs_to_python_error)
         })
     }
 
@@ -160,7 +170,10 @@ impl WorkspaceStorage {
         py.allow_threads(|| {
             self.0
                 .clear_manifest(entry_id.0, false)
-                .map_err(|_| FSLocalMissError::new_err(entry_id))
+                .map_err(|e| match e {
+                    FSError::LocalMiss(_) => FSLocalMissError::new_err(entry_id),
+                    _ => fs_to_python_error(e),
+                })
         })
     }
 
@@ -191,7 +204,7 @@ impl WorkspaceStorage {
         py.allow_threads(|| {
             self.0
                 .set_clean_block(block_id.0, block)
-                .map_err(|e| PyValueError::new_err(e.to_string()))
+                .map_err(fs_to_python_error)
         })
     }
 
@@ -205,14 +218,20 @@ impl WorkspaceStorage {
     fn get_dirty_block<'py>(&self, py: Python<'py>, block_id: BlockID) -> PyResult<&'py PyBytes> {
         let block = py
             .allow_threads(|| self.0.get_dirty_block(block_id.0))
-            .map_err(|_| FSLocalMissError::new_err(block_id))?;
+            .map_err(|e| match e {
+                FSError::LocalMiss(_) => FSLocalMissError::new_err(block_id),
+                _ => fs_to_python_error(e),
+            })?;
         Ok(PyBytes::new(py, &block))
     }
 
     fn get_chunk<'py>(&self, py: Python<'py>, chunk_id: ChunkID) -> PyResult<&'py PyBytes> {
         let chunk = py
             .allow_threads(|| self.0.get_chunk(chunk_id.0))
-            .map_err(|_| FSLocalMissError::new_err(chunk_id))?;
+            .map_err(|e| match e {
+                FSError::LocalMiss(_) => FSLocalMissError::new_err(chunk_id),
+                _ => fs_to_python_error(e),
+            })?;
         Ok(PyBytes::new(py, &chunk))
     }
 
@@ -222,7 +241,7 @@ impl WorkspaceStorage {
         py.allow_threads(|| {
             self.0
                 .set_chunk(chunk_id.0, &block)
-                .map_err(|e| PyValueError::new_err(e.to_string()))
+                .map_err(fs_to_python_error)
         })
     }
 
@@ -231,7 +250,10 @@ impl WorkspaceStorage {
         py.allow_threads(|| {
             self.0
                 .clear_chunk(chunk_id.0, miss_ok)
-                .map_err(|_| FSLocalMissError::new_err(chunk_id))
+                .map_err(|e| match e {
+                    FSError::LocalMiss(_) => FSLocalMissError::new_err(chunk_id),
+                    _ => fs_to_python_error(e),
+                })
         })
     }
 
@@ -254,7 +276,7 @@ impl WorkspaceStorage {
                         .map(|(id, x)| (id.0, x))
                         .collect::<Vec<_>>()[..],
                 )
-                .map_err(|e| PyValueError::new_err(e.to_string()))
+                .map_err(fs_to_python_error)
         })
     }
 
@@ -268,7 +290,7 @@ impl WorkspaceStorage {
                         res1.into_iter().map(EntryID).collect(),
                     )
                 })
-                .map_err(|e| PyValueError::new_err(e.to_string()))
+                .map_err(fs_to_python_error)
         })
     }
 
@@ -276,24 +298,20 @@ impl WorkspaceStorage {
         py.allow_threads(|| {
             self.0
                 .ensure_manifest_persistent(entry_id.0, false)
-                .map_err(|e| PyValueError::new_err(e.to_string()))
+                .map_err(fs_to_python_error)
         })
     }
 
     #[args(flush = true)]
     fn clear_memory_cache(&self, py: Python, flush: bool) -> PyResult<()> {
-        py.allow_threads(|| {
-            self.0
-                .clear_memory_cache(flush)
-                .map_err(|e| PyValueError::new_err(e.to_string()))
-        })
+        py.allow_threads(|| self.0.clear_memory_cache(flush).map_err(fs_to_python_error))
     }
 
     fn run_vacuum(&self, py: Python) -> PyResult<()> {
         py.allow_threads(|| {
             self.0
                 .run_vacuum()
-                .map_err(|_| PyValueError::new_err("Vacuum failed"))
+                .map_err(|_| FSInternalError::new_err("Vacuum failed"))
         })
     }
 
@@ -302,7 +320,7 @@ impl WorkspaceStorage {
             Ok(self
                 .0
                 .get_local_block_ids(&chunk_ids.into_iter().map(|id| id.0).collect::<Vec<_>>())
-                .map_err(|e| PyValueError::new_err(e.to_string()))?
+                .map_err(fs_to_python_error)?
                 .into_iter()
                 .map(ChunkID)
                 .collect())
@@ -314,7 +332,7 @@ impl WorkspaceStorage {
             Ok(self
                 .0
                 .get_local_chunk_ids(&chunk_ids.into_iter().map(|id| id.0).collect::<Vec<_>>())
-                .map_err(|e| PyValueError::new_err(e.to_string()))?
+                .map_err(fs_to_python_error)?
                 .into_iter()
                 .map(ChunkID)
                 .collect())
@@ -387,7 +405,10 @@ impl WorkspaceStorageSnapshot {
     fn get_chunk<'py>(&self, py: Python<'py>, chunk_id: ChunkID) -> PyResult<&'py PyBytes> {
         let chunk = py
             .allow_threads(|| self.0.get_chunk(chunk_id.0))
-            .map_err(|_| FSLocalMissError::new_err(chunk_id))?;
+            .map_err(|e| match e {
+                FSError::LocalMiss(_) => FSLocalMissError::new_err(chunk_id),
+                _ => fs_to_python_error(e),
+            })?;
         Ok(PyBytes::new(py, &chunk))
     }
 
@@ -396,7 +417,7 @@ impl WorkspaceStorageSnapshot {
             Ok(LocalWorkspaceManifest(
                 self.0
                     .get_workspace_manifest()
-                    .map_err(|e| PyValueError::new_err(e.to_string()))?,
+                    .map_err(fs_to_python_error)?,
             ))
         })
     }
@@ -436,7 +457,7 @@ impl WorkspaceStorageSnapshot {
         py.allow_threads(|| {
             self.0
                 .set_manifest(entry_id.0, manifest, false)
-                .map_err(|e| PyValueError::new_err(e.to_string()))
+                .map_err(fs_to_python_error)
         })
     }
 
@@ -444,7 +465,7 @@ impl WorkspaceStorageSnapshot {
         if let Some(regex) = &self.1 {
             regex
                 .cast_as::<PyAny>(py)
-                .map_err(|_| PyValueError::new_err("Impossible to fail"))
+                .map_err(|_| FSInternalError::new_err("Impossible to fail"))
         } else {
             let prevent_sync_pattern = py.allow_threads(|| self.0.get_prevent_sync_pattern());
             rs_to_py_regex(py, &prevent_sync_pattern)
@@ -459,7 +480,7 @@ impl WorkspaceStorageSnapshot {
         py.allow_threads(|| {
             self.0
                 .set_clean_block(block_id.0, block)
-                .map_err(|e| PyValueError::new_err(e.to_string()))
+                .map_err(fs_to_python_error)
         })
     }
 
@@ -473,7 +494,10 @@ impl WorkspaceStorageSnapshot {
     fn get_dirty_block<'py>(&self, py: Python<'py>, block_id: BlockID) -> PyResult<&'py PyBytes> {
         let block = py
             .allow_threads(|| self.0.get_dirty_block(block_id.0))
-            .map_err(|_| FSLocalMissError::new_err(block_id))?;
+            .map_err(|e| match e {
+                FSError::LocalMiss(_) => FSLocalMissError::new_err(block_id),
+                _ => fs_to_python_error(e),
+            })?;
         Ok(PyBytes::new(py, &block))
     }
 
@@ -511,6 +535,14 @@ pub(crate) fn workspace_storage_non_speculative_init(
             workspace_id.0,
             timestamp.map(|wrapped| wrapped.0),
         )
-        .map_err(|e| PyValueError::new_err(e.to_string()))
+        .map_err(fs_to_python_error)
     })
+}
+
+fn fs_to_python_error(e: FSError) -> PyErr {
+    match e {
+        FSError::DatabaseQueryError(_) => FSLocalStorageOperationError::new_err(e.to_string()),
+        FSError::DatabaseClosed(_) => FSLocalStorageClosedError::new_err(e.to_string()),
+        _ => FSInternalError::new_err(e.to_string()),
+    }
 }
