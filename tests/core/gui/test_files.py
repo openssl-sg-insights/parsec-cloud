@@ -912,17 +912,17 @@ async def test_import_file_disk_full(
     file2.touch()
 
     @staticmethod
-    async def run_in_thread_patched(fn, *args):
-        if fn.__name__ == "commit":
-            import sqlite3
+    def run_in_thread_patched(fn, *args):
+        from parsec.core.fs.exceptions import FSLocalStorageOperationalError
+        import sqlite3
 
+        try:
             raise sqlite3.OperationalError("database or disk is full")
-        return fn(*args)
+        except Exception as exc:
+            raise FSLocalStorageOperationalError from exc
 
     # Patch `run_in_thread` to raise an OperationError at the next commit
-    monkeypatch.setattr(
-        "parsec.core.fs.storage.local_database.LocalDatabase.run_in_thread", run_in_thread_patched
-    )
+    monkeypatch.setattr("parsec._parsec.WorkspaceStorage.set_manifest", run_in_thread_patched)
 
     monkeypatch.setattr(
         "parsec.core.gui.custom_dialogs.QDialogInProcess.getOpenFileNames",
