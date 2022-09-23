@@ -1,6 +1,7 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
 
 import pytest
+import structlog
 from hypothesis import strategies as st
 from hypothesis_trio.stateful import initialize, rule
 
@@ -28,6 +29,7 @@ def test_fs_online_rwfile_and_sync(user_fs_online_state_machine, alice):
             await workspace.sync()
             await self.user_fs.sync()
             self.file_oracle = FileOracle(base_version=1)
+            self.log: structlog.BoundLogger = structlog.get_logger(FSOnlineRwFileAndSync.__name__)
 
         @rule()
         async def restart(self):
@@ -35,6 +37,9 @@ def test_fs_online_rwfile_and_sync(user_fs_online_state_machine, alice):
 
         @rule()
         async def reset(self):
+            self.log.debug(
+                "reset", version=self.file_oracle.base_version, need_sync=self.file_oracle.need_sync
+            )
             await self.reset_user_fs(self.device)
             await self.user_fs.sync()
             # Retrieve workspace manifest v1 to replace the default empty speculative placeholder
@@ -43,9 +48,19 @@ def test_fs_online_rwfile_and_sync(user_fs_online_state_machine, alice):
 
         @rule()
         async def sync(self):
+            self.log.debug(
+                "before syn",
+                version=self.file_oracle.base_version,
+                need_sync=self.file_oracle.need_sync,
+            )
             workspace = self.user_fs.get_workspace(self.wid)
             await workspace.sync()
             self.file_oracle.sync()
+            self.log.debug(
+                "after sync",
+                version=self.file_oracle.base_version,
+                need_sync=self.file_oracle.need_sync,
+            )
 
         @rule(
             size=st.integers(min_value=0, max_value=PLAYGROUND_SIZE),
@@ -68,18 +83,32 @@ def test_fs_online_rwfile_and_sync(user_fs_online_state_machine, alice):
             async with await workspace.open_file("/foo.txt", "rb+") as f:
                 await f.seek(offset)
                 await f.write(content)
+            self.log.debug(
+                "write", version=self.file_oracle.base_version, need_sync=self.file_oracle.need_sync
+            )
             self.file_oracle.write(offset, content)
 
         @rule(length=st.integers(min_value=0, max_value=PLAYGROUND_SIZE))
         async def atomic_truncate(self, length):
             workspace = self.user_fs.get_workspace(self.wid)
             await workspace.truncate("/foo.txt", length=length)
+            self.log.debug(
+                "truncate",
+                version=self.file_oracle.base_version,
+                need_sync=self.file_oracle.need_sync,
+            )
             self.file_oracle.truncate(length)
 
         @rule()
         async def stat(self):
             workspace = self.user_fs.get_workspace(self.wid)
             path_info = await workspace.path_info("/foo.txt")
+            self.log.debug(
+                "stat",
+                version=self.file_oracle.base_version,
+                need_sync=self.file_oracle.need_sync,
+                info=path_info,
+            )
             assert path_info["type"] == "file"
             assert path_info["base_version"] == self.file_oracle.base_version
             assert not path_info["is_placeholder"]
