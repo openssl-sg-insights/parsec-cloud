@@ -4,6 +4,7 @@ import pytest
 import structlog
 from hypothesis import strategies as st
 from hypothesis_trio.stateful import initialize, rule
+from parsec._parsec import LocalDevice
 
 from parsec.api.data import EntryName
 
@@ -14,8 +15,8 @@ BLOCK_SIZE = 16
 PLAYGROUND_SIZE = BLOCK_SIZE * 10
 
 
-@pytest.mark.slow
-def test_fs_online_rwfile_and_sync(user_fs_online_state_machine, alice):
+@pytest.fixture
+def fs_online_rw_file_and_sync(user_fs_online_state_machine, alice: LocalDevice):
     class FSOnlineRwFileAndSync(user_fs_online_state_machine):
         @initialize()
         async def init(self):
@@ -115,4 +116,22 @@ def test_fs_online_rwfile_and_sync(user_fs_online_state_machine, alice):
             assert path_info["need_sync"] == self.file_oracle.need_sync
             assert path_info["size"] == self.file_oracle.size
 
-    FSOnlineRwFileAndSync.run_as_test()
+    return FSOnlineRwFileAndSync
+
+
+@pytest.mark.slow
+def test_fs_online_rwfile_and_sync(fs_online_rw_file_and_sync):
+    fs_online_rw_file_and_sync.run_as_test()
+
+
+@pytest.mark.slow
+def test_fixture_working(fs_online_rw_file_and_sync):
+    state = fs_online_rw_file_and_sync()
+
+    async def steps():
+        await state.init()
+        await state.atomic_write(content=b"\x00", offset=0)
+        await state.reset()
+        await state.stat()
+
+    state.trio_run(steps)
