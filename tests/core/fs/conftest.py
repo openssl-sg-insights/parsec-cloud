@@ -1,7 +1,7 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
 
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable
 import pytest
 from parsec._parsec import DateTime
 from contextlib import asynccontextmanager
@@ -133,7 +133,11 @@ async def alice_sync_transactions(transactions_factory, alice, alice_transaction
 
 @pytest.fixture
 def user_fs_offline_state_machine(
-    user_fs_factory, persistent_mockup, reset_testbed, hypothesis_settings
+    user_fs_factory,
+    persistent_mockup,
+    clear_database_dir: Callable[[bool], None],
+    reset_testbed,
+    hypothesis_settings,
 ):
     class UserFSOfflineStateMachine(TrioAsyncioRuleBasedStateMachine):
         async def start_user_fs(self, device):
@@ -159,6 +163,7 @@ def user_fs_offline_state_machine(
         async def reset_user_fs(self, device):
             await self.stop_user_fs()
             persistent_mockup.clear()
+            clear_database_dir(True)
             await self.start_user_fs(device)
 
         async def reset_all(self):

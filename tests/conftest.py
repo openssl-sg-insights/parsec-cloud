@@ -13,6 +13,7 @@ import trio_asyncio
 from contextlib import contextmanager
 import hypothesis
 import sqlite3
+import shutil
 
 from parsec.monitoring import TaskMonitoringInstrument
 from parsec.core.mountpoint.manager import get_mountpoint_runner
@@ -24,6 +25,9 @@ from parsec.backend.config import (
     RAID1BlockStoreConfig,
     RAID5BlockStoreConfig,
 )
+
+from typing import Callable
+from pathlib import Path
 
 # TODO: needed ?
 # Must be done before the module has any chance to be imported
@@ -477,12 +481,42 @@ def persistent_mockup(monkeypatch, fixtures_customization):
 
 
 @pytest.fixture
-def reset_testbed(request, caplog, persistent_mockup):
+def data_base_dir(tmp_path: Path) -> Path:
+    return tmp_path / "local_data"
+
+
+@pytest.fixture
+def clear_database_dir(data_base_dir: Path) -> Callable[[bool], None]:
+    db_dir = data_base_dir
+
+    def _clear_database_dir(allow_missing_path: bool):
+        print(f"Clearing database dir at `{db_dir}`")
+        if not db_dir.exists():
+            if allow_missing_path:
+                print(f"    database path `{db_dir}` does not exist")
+                return
+            else:
+                raise RuntimeError(f"database path `{db_dir}` does not exist")
+        if db_dir.is_file():
+            os.remove(db_dir)
+        elif db_dir.is_dir():
+            shutil.rmtree(db_dir)
+        else:
+            raise RuntimeError(
+                f"database path `{db_dir}` not a file nor a directory ({{}})".format(db_dir.stat())
+            )
+
+    return _clear_database_dir
+
+
+@pytest.fixture
+def reset_testbed(request, caplog, persistent_mockup, clear_database_dir: Callable[[bool], None]):
     async def _reset_testbed(keep_logs=False):
         if request.config.getoption("--postgresql"):
             await trio_asyncio.aio_as_trio(asyncio_reset_postgresql_testbed)
         if persistent_mockup is not None:
             persistent_mockup.clear()
+            clear_database_dir(True)
         if not keep_logs:
             caplog.clear()
 
