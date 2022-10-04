@@ -10,7 +10,7 @@ use std::{
 };
 
 use libparsec_crypto::SecretKey;
-use libparsec_types::{DeviceID, DeviceLabel, HumanHandle, OrganizationID};
+use libparsec_types::{DeviceID, DeviceLabel, FSPath, HumanHandle, OrganizationID};
 
 use crate::{LocalDevice, LocalDeviceError, LocalDeviceResult};
 
@@ -79,25 +79,30 @@ pub enum DeviceFile {
 }
 
 impl DeviceFile {
-    pub fn save(&self, key_file_path: &Path) -> LocalDeviceResult<()> {
+    pub fn save(&self, key_file_path: &FSPath) -> LocalDeviceResult<()> {
         if let Some(parent) = key_file_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|_| LocalDeviceError::Access(key_file_path.to_path_buf()))?;
+            std::fs::create_dir_all(parent).map_err(|_| LocalDeviceError::Access {
+                path: key_file_path.clone(),
+            })?;
         }
 
-        let data = rmp_serde::to_vec_named(self)
-            .map_err(|_| LocalDeviceError::Serialization(key_file_path.to_path_buf()))?;
+        let data = rmp_serde::to_vec_named(self).map_err(|_| LocalDeviceError::Serialization {
+            path: key_file_path.clone(),
+        })?;
 
-        std::fs::write(key_file_path, data)
-            .map_err(|_| LocalDeviceError::Access(key_file_path.to_path_buf()))
+        std::fs::write(key_file_path, data).map_err(|_| LocalDeviceError::Access {
+            path: key_file_path.clone(),
+        })
     }
 
-    fn load(key_file_path: &Path) -> LocalDeviceResult<Self> {
-        let data = std::fs::read(&key_file_path)
-            .map_err(|_| LocalDeviceError::Access(key_file_path.to_path_buf()))?;
+    fn load(key_file_path: &FSPath) -> LocalDeviceResult<Self> {
+        let data = std::fs::read(&key_file_path).map_err(|_| LocalDeviceError::Access {
+            path: key_file_path.clone(),
+        })?;
 
-        rmp_serde::from_slice::<DeviceFile>(&data)
-            .map_err(|_| LocalDeviceError::Deserialization(key_file_path.to_path_buf()))
+        rmp_serde::from_slice::<DeviceFile>(&data).map_err(|_| LocalDeviceError::Deserialization {
+            path: key_file_path.clone(),
+        })
     }
 }
 
@@ -111,7 +116,7 @@ pub enum DeviceFileType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct AvailableDevice {
-    pub key_file_path: PathBuf,
+    pub key_file_path: FSPath,
     pub organization_id: OrganizationID,
     pub device_id: DeviceID,
     pub human_handle: Option<HumanHandle>,
@@ -122,29 +127,29 @@ pub struct AvailableDevice {
 }
 
 impl AvailableDevice {
-    pub fn user_display(&self) -> String {
+    pub fn user_display(&self) -> &str {
         self.human_handle
             .as_ref()
-            .map(HumanHandle::to_string)
-            .unwrap_or_else(|| self.device_id.user_id.to_string())
+            .map(|x| x.as_ref())
+            .unwrap_or_else(|| self.device_id.user_id().as_ref())
     }
 
-    pub fn short_user_display(&self) -> String {
+    pub fn short_user_display(&self) -> &str {
         self.human_handle
             .as_ref()
-            .map(|hh| hh.label.clone())
-            .unwrap_or_else(|| self.device_id.user_id.to_string())
+            .map(|hh| hh.label())
+            .unwrap_or_else(|| self.device_id.user_id().as_ref())
     }
 
-    pub fn device_display(&self) -> String {
+    pub fn device_display(&self) -> &str {
         self.device_label
             .as_ref()
-            .map(DeviceLabel::to_string)
-            .unwrap_or_else(|| self.device_id.device_name.to_string())
+            .map(|x| x.as_ref())
+            .unwrap_or_else(|| self.device_id.device_name().as_ref())
     }
 
     /// For the legacy device files, the slug is contained in the device filename
-    fn load(key_file_path: PathBuf) -> LocalDeviceResult<Self> {
+    fn load(key_file_path: FSPath) -> LocalDeviceResult<Self> {
         let (ty, organization_id, device_id, human_handle, device_label, slug) =
             match DeviceFile::load(&key_file_path)? {
                 DeviceFile::Password(device) => (
@@ -206,22 +211,22 @@ impl AvailableDevice {
 ///
 /// Note that the filename does not carry any intrinsic meaning.
 /// Here, we simply use the slughash to avoid name collision.
-pub fn get_default_key_file(config_dir: &Path, device: &LocalDevice) -> PathBuf {
+pub fn get_default_key_file(config_dir: &Path, device: &LocalDevice) -> FSPath {
     let devices_dir = config_dir.join("devices");
     let _ = std::fs::create_dir_all(&devices_dir);
-    devices_dir.join(device.slughash() + ".keys")
+    devices_dir.join(device.slughash() + ".keys").into()
 }
 
-fn read_key_file_paths(path: PathBuf) -> LocalDeviceResult<Vec<PathBuf>> {
+fn read_key_file_paths(path: PathBuf) -> LocalDeviceResult<Vec<FSPath>> {
     let mut key_file_paths = vec![];
 
     for path in std::fs::read_dir(&path)
-        .map_err(|_| LocalDeviceError::Access(path))?
+        .map_err(|_| LocalDeviceError::Access { path: path.into() })?
         .filter_map(|path| path.ok())
         .map(|entry| entry.path())
     {
         if path.extension() == Some(OsStr::new("keys")) {
-            key_file_paths.push(path)
+            key_file_paths.push(path.into())
         } else if path.is_dir() {
             key_file_paths.append(&mut read_key_file_paths(path)?)
         }
@@ -230,12 +235,12 @@ fn read_key_file_paths(path: PathBuf) -> LocalDeviceResult<Vec<PathBuf>> {
     Ok(key_file_paths)
 }
 
-pub fn list_available_devices(config_dir: &Path) -> LocalDeviceResult<Vec<AvailableDevice>> {
+pub fn list_available_devices(config_dir: &FSPath) -> LocalDeviceResult<Vec<AvailableDevice>> {
     let mut list = vec![];
     // Set of seen slugs
     let mut seen = HashSet::new();
 
-    let key_file_paths = PathBuf::from(config_dir).join("devices");
+    let key_file_paths = config_dir.join("devices");
 
     // Consider `.keys` files in devices directory
     let mut key_file_paths = read_key_file_paths(key_file_paths)?;

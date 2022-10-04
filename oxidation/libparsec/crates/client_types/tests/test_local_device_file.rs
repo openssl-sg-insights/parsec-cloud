@@ -166,9 +166,14 @@ fn test_list_no_devices(tmp_path: TmpPath, #[case] path_exists: bool) {
         std::fs::create_dir(tmp_path.join("devices")).unwrap();
     }
 
-    match list_available_devices(&tmp_path) {
+    match list_available_devices(&tmp_path.clone().into()) {
         Ok(devices) => assert_eq!(devices, []),
-        Err(e) => assert_eq!(e, LocalDeviceError::Access(tmp_path.join("devices"))),
+        Err(e) => assert_eq!(
+            e,
+            LocalDeviceError::Access {
+                path: tmp_path.join("devices").into()
+            }
+        ),
     }
 }
 
@@ -184,8 +189,8 @@ fn test_list_devices(tmp_path: TmpPath, alice: &Device, bob: &Device, mallory: &
 
     let alice_file_path = get_default_key_file(&tmp_path, &alice);
     // Device must have a .keys extension, but can be in nested directories with a random name
-    let bob_file_path = tmp_path.join("devices/foo/whatever.keys");
-    let mallory_file_path = tmp_path.join("devices/foo/bar/spam/whatever.keys");
+    let bob_file_path = tmp_path.join("devices/foo/whatever.keys").into();
+    let mallory_file_path = tmp_path.join("devices/foo/bar/spam/whatever.keys").into();
 
     alice_device.save(&alice_file_path).unwrap();
     bob_device.save(&bob_file_path).unwrap();
@@ -203,7 +208,7 @@ fn test_list_devices(tmp_path: TmpPath, alice: &Device, bob: &Device, mallory: &
     )
     .unwrap();
 
-    let devices = list_available_devices(tmp_path.as_path()).unwrap();
+    let devices = list_available_devices(&tmp_path.clone().into()).unwrap();
 
     let expected_devices = HashSet::from([
         AvailableDevice {
@@ -257,10 +262,10 @@ fn test_list_devices_support_legacy_file_without_labels(tmp_path: TmpPath, alice
         device_label: None,
     });
     let slug = "9d84fbd57a#Org#Zack@PC1".to_string();
-    let key_file_path = tmp_path.join("devices").join(slug.clone() + ".keys");
+    let key_file_path = tmp_path.join("devices").join(slug.clone() + ".keys").into();
     device.save(&key_file_path).unwrap();
 
-    let devices = list_available_devices(&tmp_path).unwrap();
+    let devices = list_available_devices(&tmp_path.clone().into()).unwrap();
     let expected_device = AvailableDevice {
         key_file_path,
         organization_id: alice.organization_id().clone(),
@@ -300,16 +305,16 @@ fn test_available_device_display(tmp_path: TmpPath, alice: &Device) {
 
     assert_eq!(
         without_labels.device_display(),
-        alice.device_name().to_string()
+        alice.device_name().as_ref()
     );
-    assert_eq!(without_labels.user_display(), alice.user_id().to_string());
+    assert_eq!(without_labels.user_display(), alice.user_id().as_ref());
 
     assert_eq!(
         with_labels.device_display(),
-        alice.device_label.unwrap().to_string()
+        alice.device_label.unwrap().as_ref()
     );
     assert_eq!(
         with_labels.user_display(),
-        alice.human_handle.unwrap().to_string()
+        alice.human_handle.unwrap().as_ref()
     );
 }

@@ -20,16 +20,7 @@ pub use libparsec_types as types;
 pub use libparsec_crypto as crypto;
 
 // TODO: replace me by the high-level API here ;-)
-pub enum HelloError {
-    EmptySubject,
-    YouAreADog { hello: String },
-}
-pub fn hello_world(subject: &str) -> Result<String, HelloError> {
-    match subject {
-        "" => Err(HelloError::EmptySubject),
-        "Scruffy" => Err(HelloError::YouAreADog {
-            hello: "Woof !".to_owned(),
-        }),
-        _ => Ok(format!("Hellow {subject}")),
-    }
-}
+pub use libparsec_client_types::{
+    list_available_devices, AvailableDevice, DeviceFileType, LocalDeviceError,
+};
+pub use libparsec_types::FSPath;

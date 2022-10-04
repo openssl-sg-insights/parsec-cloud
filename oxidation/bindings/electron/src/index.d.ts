@@ -10,17 +10,54 @@ export type Result<T, E = Error> =
   | { ok: false; error: E };
 
 
-// HelloError
-export interface HelloErrorEmptySubject {
-    tag: "EmptySubject"
+export interface AvailableDevice {
+    key_file_path: string;
+    organization_id: string;
+    device_id: string;
+    human_handle?: string | null;
+    device_label?: string | null;
+    slug: string;
+    ty: DeviceFileType;
 }
-export interface HelloErrorYouAreADog {
-    tag: "YouAreADog"
-    hello: string;
-}
-export type HelloError =
-  | HelloErrorEmptySubject
-  | HelloErrorYouAreADog
 
 
-export function helloWorld(subject: string): Promise<Result<string, HelloError>>;
+// DeviceFileType
+export interface DeviceFileTypePassword {
+    tag: "Password"
+}
+export interface DeviceFileTypeRecovery {
+    tag: "Recovery"
+}
+export interface DeviceFileTypeSmartcard {
+    tag: "Smartcard"
+}
+export type DeviceFileType =
+  | DeviceFileTypePassword
+  | DeviceFileTypeRecovery
+  | DeviceFileTypeSmartcard
+
+
+// LocalDeviceError
+export interface LocalDeviceErrorAccess {
+    tag: "Access"
+    path: string;
+}
+export interface LocalDeviceErrorDeserialization {
+    tag: "Deserialization"
+    path: string;
+}
+export interface LocalDeviceErrorInvalidSlug {
+    tag: "InvalidSlug"
+}
+export interface LocalDeviceErrorSerialization {
+    tag: "Serialization"
+    path: string;
+}
+export type LocalDeviceError =
+  | LocalDeviceErrorAccess
+  | LocalDeviceErrorDeserialization
+  | LocalDeviceErrorInvalidSlug
+  | LocalDeviceErrorSerialization
+
+
+export function listAvailableDevices(path: string): Promise<Result<Array<AvailableDevice>, LocalDeviceError>>;

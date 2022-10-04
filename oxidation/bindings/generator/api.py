@@ -1,6 +1,6 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 (eventually AGPL-3.0) 2016-present Scille SAS
 
-from typing import Generic, TypeVar
+from typing import Generic, List, Optional, TypeVar
 
 
 # Meta-types, not part of the API but to be used to describe the API
@@ -25,35 +25,63 @@ class Ref(Generic[TypeVar("REFERENCED")]):  # noqa
 
 # A type that should be converted from/into string
 class StrBasedType:
-    pass
+    ...
 
 
 class OrganizationID(StrBasedType):
-    pass
-
-
-class DeviceID(StrBasedType):
-    pass
+    ...
 
 
 class DeviceLabel(StrBasedType):
-    pass
+    ...
 
 
-class PathBuf(StrBasedType):
-    pass
+class HumanHandle(StrBasedType):
+    ...
 
 
-Path = Ref[PathBuf]
+class FSPath(StrBasedType):
+    ...
 
 
-class HelloError(Variant):
-    class EmptySubject:
-        pass
-
-    class YouAreADog:
-        hello: str
+class DeviceID(StrBasedType):
+    ...
 
 
-def hello_world(subject: Ref[str]) -> Result[str, HelloError]:
+class DeviceFileType(Variant):
+    class Password:
+        ...
+
+    class Recovery:
+        ...
+
+    class Smartcard:
+        ...
+
+
+class LocalDeviceError(Variant):
+    class Access:
+        path: FSPath
+
+    class Deserialization:
+        path: FSPath
+
+    class InvalidSlug:
+        ...
+
+    class Serialization:
+        path: FSPath
+
+
+class AvailableDevice(Structure):
+    key_file_path: FSPath
+    organization_id: OrganizationID
+    device_id: DeviceID
+    human_handle: Optional[HumanHandle]
+    device_label: Optional[DeviceLabel]
+    slug: str
+    ty: DeviceFileType
+
+
+def list_available_devices(path: Ref[FSPath]) -> Result[List[AvailableDevice], LocalDeviceError]:
     ...
