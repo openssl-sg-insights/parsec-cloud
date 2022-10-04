@@ -53,7 +53,7 @@ impl<T: Eq + Hash + Copy> Locker<T> {
 
 /// WorkspaceStorage is implemented with interior mutability because
 /// we want some parallelism between its fields (e.g entry_locks)
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct WorkspaceStorage {
     pub device: LocalDevice,
     pub workspace_id: EntryID,
@@ -65,6 +65,30 @@ pub struct WorkspaceStorage {
     prevent_sync_pattern: Arc<Mutex<Regex>>,
     prevent_sync_pattern_fully_applied: Arc<Mutex<bool>>,
     entry_locks: Locker<EntryID>,
+}
+
+impl Drop for WorkspaceStorage {
+    fn drop(&mut self) {
+        println!("dropping WorkspaceStorage")
+    }
+}
+
+impl Clone for WorkspaceStorage {
+    fn clone(&self) -> Self {
+        println!("Cloning WorkspaceStorage");
+        Self {
+            device: self.device.clone(),
+            workspace_id: self.workspace_id,
+            open_fds: self.open_fds.clone(),
+            fd_counter: self.fd_counter.clone(),
+            block_storage: self.block_storage.clone(),
+            chunk_storage: self.chunk_storage.clone(),
+            manifest_storage: self.manifest_storage.clone(),
+            prevent_sync_pattern: self.prevent_sync_pattern.clone(),
+            prevent_sync_pattern_fully_applied: self.prevent_sync_pattern_fully_applied.clone(),
+            entry_locks: self.entry_locks.clone(),
+        }
+    }
 }
 
 impl WorkspaceStorage {
@@ -79,6 +103,8 @@ impl WorkspaceStorage {
             get_workspace_data_storage_db_path(data_base_dir.as_ref(), &device, workspace_id);
         let cache_path =
             get_workspace_cache_storage_db_path(data_base_dir.as_ref(), &device, workspace_id);
+
+        println!("creating WorkspaceStorage");
 
         let data_pool = SqlitePool::new(
             data_path
@@ -406,8 +432,15 @@ pub struct WorkspaceStorageSnapshot {
     pub workspace_storage: WorkspaceStorage,
 }
 
+impl Drop for WorkspaceStorageSnapshot {
+    fn drop(&mut self) {
+        println!("dropping WorkspaceStorageSnapshot")
+    }
+}
+
 impl From<WorkspaceStorage> for WorkspaceStorageSnapshot {
     fn from(workspace_storage: WorkspaceStorage) -> Self {
+        println!("Creating WorkspaceStorageSnapshot");
         Self {
             cache: Arc::new(Mutex::new(HashMap::default())),
             workspace_storage,
@@ -548,6 +581,7 @@ pub fn workspace_storage_non_speculative_init(
     workspace_id: EntryID,
     timestamp: Option<DateTime>,
 ) -> FSResult<()> {
+    println!("workspace_storage_non_speculative_init");
     let data_path = get_workspace_data_storage_db_path(data_base_dir, &device, workspace_id);
     let data_pool = SqlitePool::new(
         data_path

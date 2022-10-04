@@ -25,6 +25,8 @@ class LocalDatabase:
         self.path = trio.Path(path)
         self.vacuum_threshold = vacuum_threshold
 
+        print(f"Init LocalDatabase at {path}")
+
     @classmethod
     @asynccontextmanager
     async def run(
@@ -103,6 +105,7 @@ class LocalDatabase:
     # Life cycle
 
     async def _create_connection(self) -> None:
+        raise NotImplementedError("Hum, we should use Rust impl of WorkspaceStorage")
         # Create directories
         await self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
