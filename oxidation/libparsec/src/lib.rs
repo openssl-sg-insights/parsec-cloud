@@ -21,6 +21,5 @@ pub use libparsec_crypto as crypto;
 
 // TODO: replace me by the high-level API here ;-)
 pub use libparsec_client_types::{
-    list_available_devices, AvailableDevice, DeviceFileType, LocalDeviceError,
+    list_available_devices, AvailableDevice, DeviceFileType, FSPath, LocalDeviceError,
 };
-pub use libparsec_types::FSPath;

@@ -113,14 +113,20 @@ impl_from_maybe!(Option<DeviceLabel>);
  * DeviceID
  */
 
-#[derive(
-    Default, Clone, SerializeDisplay, DeserializeFromStr, PartialEq, Eq, PartialOrd, Ord, Hash,
-)]
+#[derive(Clone, SerializeDisplay, DeserializeFromStr, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DeviceID {
     user_id: UserID,
     device_name: DeviceName,
     // Cache the display str
     display: String,
+}
+
+impl Default for DeviceID {
+    fn default() -> Self {
+        let user_id = Default::default();
+        let device_name = Default::default();
+        Self::new(user_id, device_name)
+    }
 }
 
 impl_debug_from_display!(DeviceID);

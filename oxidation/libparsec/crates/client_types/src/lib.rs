@@ -4,8 +4,10 @@ mod error;
 mod local_device;
 mod local_device_file;
 mod local_manifest;
+mod path;
 
 pub use error::*;
 pub use local_device::*;
 pub use local_device_file::*;
 pub use local_manifest::*;
+pub use path::*;

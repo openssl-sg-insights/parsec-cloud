@@ -10,7 +10,7 @@ use std::{
 };
 
 use libparsec_crypto::SecretKey;
-use libparsec_types::{DeviceID, DeviceLabel, FSPath, HumanHandle, OrganizationID};
+use libparsec_types::{DeviceID, DeviceLabel, HumanHandle, OrganizationID};
 
 use crate::{LocalDevice, LocalDeviceError, LocalDeviceResult};
 
