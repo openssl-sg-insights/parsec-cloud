@@ -6,9 +6,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Special Path which implement `AsRef<str>` and `FromStr` to be used in a generator
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct StrPath(PathBuf);
 
+/// We do this trick to generate client code, this is not used in parsec
 impl std::str::FromStr for StrPath {
     // Type Err require AsRef<str> & Display for generator
     type Err = &'static str;
@@ -18,6 +20,7 @@ impl std::str::FromStr for StrPath {
     }
 }
 
+/// We do this trick to generate client code, this is not used in parsec
 impl AsRef<str> for StrPath {
     fn as_ref(&self) -> &str {
         self.to_str().expect("Couldn't convert path to str")
