@@ -267,10 +267,7 @@ mod time_provider {
         }
 
         pub async fn sleep(&self, time: std::time::Duration) {
-            #[cfg(not(target_arch = "wasm32"))]
-            libparsec_platform_async::native::sleep(time).await;
-            #[cfg(target_arch = "wasm32")]
-            libparsec_platform_async::wasm32::sleep(time).await;
+            libparsec_platform_async::platform::sleep(time).await;
         }
     }
 }
