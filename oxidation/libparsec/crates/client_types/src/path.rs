@@ -10,7 +10,7 @@ use std::{
 pub struct StrPath(PathBuf);
 
 impl std::str::FromStr for StrPath {
-    // Type Err require As<str> & Display for generator
+    // Type Err require AsRef<str> & Display for generator
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

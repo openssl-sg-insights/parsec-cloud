@@ -14,8 +14,8 @@ export interface AvailableDevice {
     key_file_path: string;
     organization_id: string;
     device_id: string;
-    human_handle?: string | null;
-    device_label?: string | null;
+    human_handle: string | null;
+    device_label: string | null;
     slug: string;
     ty: DeviceFileType;
 }
