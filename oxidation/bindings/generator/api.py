@@ -69,5 +69,5 @@ class AvailableDevice(Structure):
     ty: DeviceFileType
 
 
-def list_available_devices(path: Ref[StrPath]) -> List[AvailableDevice]:
+def list_available_devices(path: StrPath) -> List[AvailableDevice]:
     ...

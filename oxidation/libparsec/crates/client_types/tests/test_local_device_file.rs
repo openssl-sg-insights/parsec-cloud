@@ -166,14 +166,9 @@ fn test_list_no_devices(tmp_path: TmpPath, #[case] path_exists: bool) {
         std::fs::create_dir(tmp_path.join("devices")).unwrap();
     }
 
-    match list_available_devices(&tmp_path.clone().into()) {
+    match list_available_devices(&tmp_path) {
         Ok(devices) => assert_eq!(devices, []),
-        Err(e) => assert_eq!(
-            e,
-            LocalDeviceError::Access {
-                path: tmp_path.join("devices").into()
-            }
-        ),
+        Err(e) => assert_eq!(e, LocalDeviceError::Access(tmp_path.join("devices"))),
     }
 }
 
@@ -189,8 +184,8 @@ fn test_list_devices(tmp_path: TmpPath, alice: &Device, bob: &Device, mallory: &
 
     let alice_file_path = get_default_key_file(&tmp_path, &alice);
     // Device must have a .keys extension, but can be in nested directories with a random name
-    let bob_file_path = tmp_path.join("devices/foo/whatever.keys").into();
-    let mallory_file_path = tmp_path.join("devices/foo/bar/spam/whatever.keys").into();
+    let bob_file_path = tmp_path.join("devices/foo/whatever.keys");
+    let mallory_file_path = tmp_path.join("devices/foo/bar/spam/whatever.keys");
 
     alice_device.save(&alice_file_path).unwrap();
     bob_device.save(&bob_file_path).unwrap();
@@ -208,11 +203,11 @@ fn test_list_devices(tmp_path: TmpPath, alice: &Device, bob: &Device, mallory: &
     )
     .unwrap();
 
-    let devices = list_available_devices(&tmp_path.clone().into()).unwrap();
+    let devices = list_available_devices(&tmp_path).unwrap();
 
     let expected_devices = HashSet::from([
         AvailableDevice {
-            key_file_path: alice_file_path,
+            key_file_path: alice_file_path.into(),
 
             organization_id: alice.organization_id().clone(),
             device_id: alice.device_id.clone(),
@@ -222,7 +217,7 @@ fn test_list_devices(tmp_path: TmpPath, alice: &Device, bob: &Device, mallory: &
             ty: DeviceFileType::Password,
         },
         AvailableDevice {
-            key_file_path: bob_file_path,
+            key_file_path: bob_file_path.into(),
 
             organization_id: bob.organization_id().clone(),
             device_id: bob.device_id.clone(),
@@ -232,7 +227,7 @@ fn test_list_devices(tmp_path: TmpPath, alice: &Device, bob: &Device, mallory: &
             ty: DeviceFileType::Password,
         },
         AvailableDevice {
-            key_file_path: mallory_file_path,
+            key_file_path: mallory_file_path.into(),
 
             organization_id: mallory.organization_id().clone(),
             device_id: mallory.device_id.clone(),
@@ -262,12 +257,12 @@ fn test_list_devices_support_legacy_file_without_labels(tmp_path: TmpPath, alice
         device_label: None,
     });
     let slug = "9d84fbd57a#Org#Zack@PC1".to_string();
-    let key_file_path = tmp_path.join("devices").join(slug.clone() + ".keys").into();
+    let key_file_path = tmp_path.join("devices").join(slug.clone() + ".keys");
     device.save(&key_file_path).unwrap();
 
-    let devices = list_available_devices(&tmp_path.clone().into()).unwrap();
+    let devices = list_available_devices(&tmp_path).unwrap();
     let expected_device = AvailableDevice {
-        key_file_path,
+        key_file_path: key_file_path.into(),
         organization_id: alice.organization_id().clone(),
         device_id: alice.device_id.clone(),
         human_handle: None,
@@ -284,7 +279,7 @@ fn test_available_device_display(tmp_path: TmpPath, alice: &Device) {
     let alice = alice.local_device();
 
     let without_labels = AvailableDevice {
-        key_file_path: get_default_key_file(&tmp_path, &alice),
+        key_file_path: get_default_key_file(&tmp_path, &alice).into(),
         organization_id: alice.organization_id().clone(),
         device_id: alice.device_id.clone(),
         human_handle: None,
@@ -294,7 +289,7 @@ fn test_available_device_display(tmp_path: TmpPath, alice: &Device) {
     };
 
     let with_labels = AvailableDevice {
-        key_file_path: get_default_key_file(&tmp_path, &alice),
+        key_file_path: get_default_key_file(&tmp_path, &alice).into(),
         organization_id: alice.organization_id().clone(),
         device_id: alice.device_id.clone(),
         human_handle: alice.human_handle.clone(),

@@ -167,8 +167,7 @@ pub fn listAvailableDevices(path: String) -> Promise {
         let path = path
             .parse()
             .map_err(|_| JsValue::from(TypeError::new("Not a valid StrPath")))?;
-
-        let ret = libparsec::list_available_devices(&path);
+        let ret = libparsec::list_available_devices(path);
         Ok({
             let js_array = Array::new_with_length(ret.len() as u32);
             for elem in ret {

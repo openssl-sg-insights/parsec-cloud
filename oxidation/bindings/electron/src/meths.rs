@@ -159,7 +159,7 @@ fn list_available_devices(mut cx: FunctionContext) -> JsResult<JsPromise> {
             Err(err) => return (&mut cx).throw_type_error(err),
         }
     };
-    let ret = libparsec::list_available_devices(&path);
+    let ret = libparsec::list_available_devices(path);
     let js_ret = {
         let js_array = JsArray::new(&mut cx, ret.len() as u32);
         for (i, elem) in ret.into_iter().enumerate() {
