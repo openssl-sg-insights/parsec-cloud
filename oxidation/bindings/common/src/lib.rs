@@ -3,7 +3,7 @@
 use base64::DecodeError;
 
 use libparsec::crypto::SecretKey;
-pub use libparsec::{create_context, FSPath, RuntimeContext};
+pub use libparsec::{create_context, RuntimeContext, StrPath};
 
 #[cfg(not(target_arch = "wasm32"))]
 use libparsec::client_types::list_available_devices;
@@ -18,7 +18,7 @@ pub enum Cmd {
     Version,
     Encrypt(SecretKey, Vec<u8>),
     Decrypt(SecretKey, Vec<u8>),
-    ListAvailableDevices(FSPath),
+    ListAvailableDevices(StrPath),
 }
 
 impl Cmd {
@@ -41,7 +41,7 @@ impl Cmd {
             },
             ("list_available_devices", [config_dir]) => {
                 let config_dir = std::str::from_utf8(config_dir).unwrap();
-                Self::ListAvailableDevices(FSPath::from(config_dir))
+                Self::ListAvailableDevices(StrPath::from(config_dir))
             }
             (unknown_cmd, payload) => {
                 return Err(format!(

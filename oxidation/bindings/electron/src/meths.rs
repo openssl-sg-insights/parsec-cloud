@@ -150,83 +150,6 @@ fn variant_devicefiletype_rs_to_js<'a>(
     Ok(js_obj)
 }
 
-// LocalDeviceError
-
-#[allow(dead_code)]
-fn variant_localdeviceerror_js_to_rs<'a>(
-    cx: &mut impl Context<'a>,
-    obj: Handle<'a, JsObject>,
-) -> NeonResult<libparsec::LocalDeviceError> {
-    let tag = obj.get::<JsString, _, _>(cx, "tag")?.value(cx);
-    match tag.as_str() {
-        "Access" => {
-            let path = {
-                let js_val: Handle<JsString> = obj.get(cx, "path")?;
-                match js_val.value(cx).parse() {
-                    Ok(val) => val,
-                    Err(err) => return (cx).throw_type_error(err),
-                }
-            };
-            Ok(libparsec::LocalDeviceError::Access { path })
-        }
-        "Deserialization" => {
-            let path = {
-                let js_val: Handle<JsString> = obj.get(cx, "path")?;
-                match js_val.value(cx).parse() {
-                    Ok(val) => val,
-                    Err(err) => return (cx).throw_type_error(err),
-                }
-            };
-            Ok(libparsec::LocalDeviceError::Deserialization { path })
-        }
-        "InvalidSlug" => Ok(libparsec::LocalDeviceError::InvalidSlug {}),
-        "Serialization" => {
-            let path = {
-                let js_val: Handle<JsString> = obj.get(cx, "path")?;
-                match js_val.value(cx).parse() {
-                    Ok(val) => val,
-                    Err(err) => return (cx).throw_type_error(err),
-                }
-            };
-            Ok(libparsec::LocalDeviceError::Serialization { path })
-        }
-        _ => cx.throw_type_error("Object is not a LocalDeviceError"),
-    }
-}
-
-#[allow(dead_code)]
-fn variant_localdeviceerror_rs_to_js<'a>(
-    cx: &mut impl Context<'a>,
-    rs_obj: libparsec::LocalDeviceError,
-) -> NeonResult<Handle<'a, JsObject>> {
-    let js_obj = cx.empty_object();
-    match rs_obj {
-        libparsec::LocalDeviceError::Access { path } => {
-            let js_tag = JsString::try_new(cx, "Access").or_throw(cx)?;
-            js_obj.set(cx, "tag", js_tag)?;
-            let js_path = JsString::try_new(cx, path).or_throw(cx)?;
-            js_obj.set(cx, "path", js_path)?;
-        }
-        libparsec::LocalDeviceError::Deserialization { path } => {
-            let js_tag = JsString::try_new(cx, "Deserialization").or_throw(cx)?;
-            js_obj.set(cx, "tag", js_tag)?;
-            let js_path = JsString::try_new(cx, path).or_throw(cx)?;
-            js_obj.set(cx, "path", js_path)?;
-        }
-        libparsec::LocalDeviceError::InvalidSlug {} => {
-            let js_tag = JsString::try_new(cx, "InvalidSlug").or_throw(cx)?;
-            js_obj.set(cx, "tag", js_tag)?;
-        }
-        libparsec::LocalDeviceError::Serialization { path } => {
-            let js_tag = JsString::try_new(cx, "Serialization").or_throw(cx)?;
-            js_obj.set(cx, "tag", js_tag)?;
-            let js_path = JsString::try_new(cx, path).or_throw(cx)?;
-            js_obj.set(cx, "path", js_path)?;
-        }
-    }
-    Ok(js_obj)
-}
-
 // list_available_devices
 fn list_available_devices(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let path = {
@@ -237,30 +160,13 @@ fn list_available_devices(mut cx: FunctionContext) -> JsResult<JsPromise> {
         }
     };
     let ret = libparsec::list_available_devices(&path);
-    let js_ret = match ret {
-        Ok(ok) => {
-            let js_obj = JsObject::new(&mut cx);
-            let js_tag = JsBoolean::new(&mut cx, true);
-            js_obj.set(&mut cx, "ok", js_tag)?;
-            let js_value = {
-                let js_array = JsArray::new(&mut cx, ok.len() as u32);
-                for (i, elem) in ok.into_iter().enumerate() {
-                    let js_elem = struct_availabledevice_rs_to_js(&mut cx, elem)?;
-                    js_array.set(&mut cx, i as u32, js_elem)?;
-                }
-                js_array
-            };
-            js_obj.set(&mut cx, "value", js_value)?;
-            js_obj
+    let js_ret = {
+        let js_array = JsArray::new(&mut cx, ret.len() as u32);
+        for (i, elem) in ret.into_iter().enumerate() {
+            let js_elem = struct_availabledevice_rs_to_js(&mut cx, elem)?;
+            js_array.set(&mut cx, i as u32, js_elem)?;
         }
-        Err(err) => {
-            let js_obj = (&mut cx).empty_object();
-            let js_tag = JsBoolean::new(&mut cx, false);
-            js_obj.set(&mut cx, "ok", js_tag)?;
-            let js_err = variant_localdeviceerror_rs_to_js(&mut cx, err)?;
-            js_obj.set(&mut cx, "error", js_err)?;
-            js_obj
-        }
+        js_array
     };
     let (deferred, promise) = cx.promise();
     deferred.resolve(&mut cx, js_ret);

@@ -24,7 +24,7 @@ fn struct_availabledevice_js_to_rs(obj: JsValue) -> Result<libparsec::AvailableD
             .and_then(|s| s.as_string())
             .ok_or_else(|| TypeError::new("Not a string"))?
             .parse()
-            .map_err(|_| TypeError::new("Not a valid FSPath"))?
+            .map_err(|_| TypeError::new("Not a valid StrPath"))?
     };
     let organization_id = {
         let js_val = Reflect::get(&obj, &"organization_id".into())?;
@@ -159,88 +159,6 @@ fn variant_devicefiletype_rs_to_js(rs_obj: libparsec::DeviceFileType) -> Result<
     Ok(js_obj)
 }
 
-// LocalDeviceError
-
-#[allow(dead_code)]
-fn variant_localdeviceerror_js_to_rs(obj: JsValue) -> Result<libparsec::LocalDeviceError, JsValue> {
-    let tag = Reflect::get(&obj, &"tag".into())?;
-    match tag {
-        tag if tag == JsValue::from_str("Access") => {
-            let path = {
-                let js_val = Reflect::get(&obj, &"path".into())?;
-                js_val
-                    .dyn_into::<JsString>()
-                    .ok()
-                    .and_then(|s| s.as_string())
-                    .ok_or_else(|| TypeError::new("Not a string"))?
-                    .parse()
-                    .map_err(|_| TypeError::new("Not a valid FSPath"))?
-            };
-            Ok(libparsec::LocalDeviceError::Access { path })
-        }
-        tag if tag == JsValue::from_str("Deserialization") => {
-            let path = {
-                let js_val = Reflect::get(&obj, &"path".into())?;
-                js_val
-                    .dyn_into::<JsString>()
-                    .ok()
-                    .and_then(|s| s.as_string())
-                    .ok_or_else(|| TypeError::new("Not a string"))?
-                    .parse()
-                    .map_err(|_| TypeError::new("Not a valid FSPath"))?
-            };
-            Ok(libparsec::LocalDeviceError::Deserialization { path })
-        }
-        tag if tag == JsValue::from_str("InvalidSlug") => {
-            Ok(libparsec::LocalDeviceError::InvalidSlug {})
-        }
-        tag if tag == JsValue::from_str("Serialization") => {
-            let path = {
-                let js_val = Reflect::get(&obj, &"path".into())?;
-                js_val
-                    .dyn_into::<JsString>()
-                    .ok()
-                    .and_then(|s| s.as_string())
-                    .ok_or_else(|| TypeError::new("Not a string"))?
-                    .parse()
-                    .map_err(|_| TypeError::new("Not a valid FSPath"))?
-            };
-            Ok(libparsec::LocalDeviceError::Serialization { path })
-        }
-        _ => Err(JsValue::from(TypeError::new(
-            "Object is not a LocalDeviceError",
-        ))),
-    }
-}
-
-#[allow(dead_code)]
-fn variant_localdeviceerror_rs_to_js(
-    rs_obj: libparsec::LocalDeviceError,
-) -> Result<JsValue, JsValue> {
-    let js_obj = Object::new().into();
-    match rs_obj {
-        libparsec::LocalDeviceError::Access { path } => {
-            Reflect::set(&js_obj, &"tag".into(), &"Access".into())?;
-            let js_path = JsValue::from_str(path.as_ref());
-            Reflect::set(&js_obj, &"path".into(), &js_path)?;
-        }
-        libparsec::LocalDeviceError::Deserialization { path } => {
-            Reflect::set(&js_obj, &"tag".into(), &"Deserialization".into())?;
-            let js_path = JsValue::from_str(path.as_ref());
-            Reflect::set(&js_obj, &"path".into(), &js_path)?;
-        }
-        libparsec::LocalDeviceError::InvalidSlug {} => {
-            Reflect::set(&js_obj, &"tag".into(), &"InvalidSlug".into())?;
-        }
-        libparsec::LocalDeviceError::Serialization { path } => {
-            Reflect::set(&js_obj, &"tag".into(), &"Serialization".into())?;
-            let js_path = JsValue::from_str(path.as_ref());
-            Reflect::set(&js_obj, &"path".into(), &js_path)?;
-        }
-    }
-    Ok(js_obj)
-}
-
 // list_available_devices
 #[allow(non_snake_case)]
 #[wasm_bindgen]
@@ -248,31 +166,16 @@ pub fn listAvailableDevices(path: String) -> Promise {
     future_to_promise(async move {
         let path = path
             .parse()
-            .map_err(|_| JsValue::from(TypeError::new("Not a valid FSPath")))?;
+            .map_err(|_| JsValue::from(TypeError::new("Not a valid StrPath")))?;
 
         let ret = libparsec::list_available_devices(&path);
-        Ok(match ret {
-            Ok(value) => {
-                let js_obj = Object::new().into();
-                Reflect::set(&js_obj, &"ok".into(), &true.into())?;
-                let js_value = {
-                    let js_array = Array::new_with_length(value.len() as u32);
-                    for elem in value {
-                        let js_elem = struct_availabledevice_rs_to_js(elem)?;
-                        js_array.push(&js_elem);
-                    }
-                    js_array.into()
-                };
-                Reflect::set(&js_obj, &"value".into(), &js_value)?;
-                js_obj
+        Ok({
+            let js_array = Array::new_with_length(ret.len() as u32);
+            for elem in ret {
+                let js_elem = struct_availabledevice_rs_to_js(elem)?;
+                js_array.push(&js_elem);
             }
-            Err(err) => {
-                let js_obj = Object::new().into();
-                Reflect::set(&js_obj, &"ok".into(), &false.into())?;
-                let js_err = variant_localdeviceerror_rs_to_js(err)?;
-                Reflect::set(&js_obj, &"error".into(), &js_err)?;
-                js_obj
-            }
+            js_array.into()
         })
     })
 }

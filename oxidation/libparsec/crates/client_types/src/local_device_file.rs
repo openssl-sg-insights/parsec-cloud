@@ -79,7 +79,7 @@ pub enum DeviceFile {
 }
 
 impl DeviceFile {
-    pub fn save(&self, key_file_path: &FSPath) -> LocalDeviceResult<()> {
+    pub fn save(&self, key_file_path: &StrPath) -> LocalDeviceResult<()> {
         if let Some(parent) = key_file_path.parent() {
             std::fs::create_dir_all(parent).map_err(|_| LocalDeviceError::Access {
                 path: key_file_path.clone(),
@@ -95,7 +95,7 @@ impl DeviceFile {
         })
     }
 
-    fn load(key_file_path: &FSPath) -> LocalDeviceResult<Self> {
+    fn load(key_file_path: &StrPath) -> LocalDeviceResult<Self> {
         let data = std::fs::read(&key_file_path).map_err(|_| LocalDeviceError::Access {
             path: key_file_path.clone(),
         })?;
@@ -116,7 +116,7 @@ pub enum DeviceFileType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct AvailableDevice {
-    pub key_file_path: FSPath,
+    pub key_file_path: StrPath,
     pub organization_id: OrganizationID,
     pub device_id: DeviceID,
     pub human_handle: Option<HumanHandle>,
@@ -149,7 +149,7 @@ impl AvailableDevice {
     }
 
     /// For the legacy device files, the slug is contained in the device filename
-    fn load(key_file_path: FSPath) -> LocalDeviceResult<Self> {
+    fn load(key_file_path: StrPath) -> LocalDeviceResult<Self> {
         let (ty, organization_id, device_id, human_handle, device_label, slug) =
             match DeviceFile::load(&key_file_path)? {
                 DeviceFile::Password(device) => (
@@ -211,13 +211,13 @@ impl AvailableDevice {
 ///
 /// Note that the filename does not carry any intrinsic meaning.
 /// Here, we simply use the slughash to avoid name collision.
-pub fn get_default_key_file(config_dir: &Path, device: &LocalDevice) -> FSPath {
+pub fn get_default_key_file(config_dir: &Path, device: &LocalDevice) -> StrPath {
     let devices_dir = config_dir.join("devices");
     let _ = std::fs::create_dir_all(&devices_dir);
     devices_dir.join(device.slughash() + ".keys").into()
 }
 
-fn read_key_file_paths(path: PathBuf) -> LocalDeviceResult<Vec<FSPath>> {
+fn read_key_file_paths(path: PathBuf) -> LocalDeviceResult<Vec<StrPath>> {
     let mut key_file_paths = vec![];
 
     for path in std::fs::read_dir(&path)
@@ -235,7 +235,7 @@ fn read_key_file_paths(path: PathBuf) -> LocalDeviceResult<Vec<FSPath>> {
     Ok(key_file_paths)
 }
 
-pub fn list_available_devices(config_dir: &FSPath) -> LocalDeviceResult<Vec<AvailableDevice>> {
+pub fn list_available_devices(config_dir: &StrPath) -> LocalDeviceResult<Vec<AvailableDevice>> {
     let mut list = vec![];
     // Set of seen slugs
     let mut seen = HashSet::new();

@@ -33,28 +33,6 @@ export type DeviceFileType =
   | DeviceFileTypeRecovery
   | DeviceFileTypeSmartcard
 
-// LocalDeviceError
-export interface LocalDeviceErrorAccess {
-    tag: 'Access'
-    path: string;
-}
-export interface LocalDeviceErrorDeserialization {
-    tag: 'Deserialization'
-    path: string;
-}
-export interface LocalDeviceErrorInvalidSlug {
-    tag: 'InvalidSlug'
-}
-export interface LocalDeviceErrorSerialization {
-    tag: 'Serialization'
-    path: string;
-}
-export type LocalDeviceError =
-  | LocalDeviceErrorAccess
-  | LocalDeviceErrorDeserialization
-  | LocalDeviceErrorInvalidSlug
-  | LocalDeviceErrorSerialization
-
 export interface LibParsecPlugin {
-    listAvailableDevices(path: string): Promise<Result<Array<AvailableDevice>, LocalDeviceError>>;
+    listAvailableDevices(path: string): Promise<Array<AvailableDevice>>;
 }

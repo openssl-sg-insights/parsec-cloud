@@ -368,7 +368,7 @@ fn {{ meth.name }}(mut cx: FunctionContext) -> JsResult<JsPromise> {
 {% if meth.return_type is none %}
     libparsec::{{ meth.name }}(
 {% elif meth.return_type.kind == "list" %}
-    let mut ret = libparsec::{{ meth.name }}(
+    let ret = libparsec::{{ meth.name }}(
 {% else %}
     let ret = libparsec::{{ meth.name }}(
 {% endif %}

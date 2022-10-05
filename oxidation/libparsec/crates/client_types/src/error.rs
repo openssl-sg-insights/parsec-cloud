@@ -1,6 +1,6 @@
 // Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 (eventually AGPL-3.0) 2016-present Scille SAS
 
-use crate::FSPath;
+use crate::StrPath;
 use thiserror::Error;
 
 use libparsec_crypto::CryptoError;
@@ -10,13 +10,13 @@ use crate::DeviceFileType;
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum LocalDeviceError {
     #[error("Could not access to the dir/file: {path}")]
-    Access { path: FSPath },
+    Access { path: StrPath },
 
     #[error("Deserialization error: {path}")]
-    Deserialization { path: FSPath },
+    Deserialization { path: StrPath },
 
     #[error("Serialization error: {path}")]
-    Serialization { path: FSPath },
+    Serialization { path: StrPath },
 
     #[error("Invalid slug")]
     InvalidSlug,

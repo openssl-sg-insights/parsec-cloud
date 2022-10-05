@@ -25,56 +25,42 @@ class Ref(Generic[TypeVar("REFERENCED")]):  # noqa
 
 # A type that should be converted from/into string
 class StrBasedType:
-    ...
+    pass
 
 
 class OrganizationID(StrBasedType):
-    ...
+    pass
 
 
 class DeviceLabel(StrBasedType):
-    ...
+    pass
 
 
 class HumanHandle(StrBasedType):
-    ...
+    pass
 
 
-class FSPath(StrBasedType):
-    ...
+class StrPath(StrBasedType):
+    pass
 
 
 class DeviceID(StrBasedType):
-    ...
+    pass
 
 
 class DeviceFileType(Variant):
     class Password:
-        ...
+        pass
 
     class Recovery:
-        ...
+        pass
 
     class Smartcard:
-        ...
-
-
-class LocalDeviceError(Variant):
-    class Access:
-        path: FSPath
-
-    class Deserialization:
-        path: FSPath
-
-    class InvalidSlug:
-        ...
-
-    class Serialization:
-        path: FSPath
+        pass
 
 
 class AvailableDevice(Structure):
-    key_file_path: FSPath
+    key_file_path: StrPath
     organization_id: OrganizationID
     device_id: DeviceID
     human_handle: Optional[HumanHandle]
@@ -83,5 +69,5 @@ class AvailableDevice(Structure):
     ty: DeviceFileType
 
 
-def list_available_devices(path: Ref[FSPath]) -> Result[List[AvailableDevice], LocalDeviceError]:
+def list_available_devices(path: Ref[StrPath]) -> List[AvailableDevice]:
     ...
