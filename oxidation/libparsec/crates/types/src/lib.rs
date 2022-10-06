@@ -12,6 +12,7 @@ mod id;
 mod invite;
 mod manifest;
 mod message;
+mod pki;
 pub mod regex;
 mod time;
 
@@ -23,4 +24,5 @@ pub use id::*;
 pub use invite::*;
 pub use manifest::*;
 pub use message::*;
+pub use pki::*;
 pub use time::*;

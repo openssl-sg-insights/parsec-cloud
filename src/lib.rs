@@ -4,6 +4,7 @@ mod addrs;
 mod api_crypto;
 mod binding_utils;
 mod certif;
+mod data;
 mod enumerate;
 mod file_operations;
 mod ids;
@@ -40,6 +41,9 @@ fn entrypoint(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<certif::RevokedUserCertificate>()?;
     m.add_class::<certif::DeviceCertificate>()?;
     m.add_class::<certif::RealmRoleCertificate>()?;
+
+    m.add_class::<data::PkiEnrollmentAnswerPayload>()?;
+    m.add_class::<data::PkiEnrollmentSubmitPayload>()?;
 
     m.add_class::<enumerate::InvitationType>()?;
     m.add_class::<enumerate::UserProfile>()?;
