@@ -69,7 +69,7 @@ def field_to_spec(field):
         # This is done to easily see which schema is impacted on enum
         # modification (for instance adding a value in an enum doesn't impact
         # a schema using an `EnumCheckedConstant` on this enum).
-        spec["enum_allowed_values"] = [v.value for v in field.ENUM]
+        spec["enum_allowed_values"] = [v.value for v in field.ENUM.iter()]
     elif isinstance(field, Nested):
         spec["schema"] = schema_to_spec(field.schema)
     elif isinstance(field, List):

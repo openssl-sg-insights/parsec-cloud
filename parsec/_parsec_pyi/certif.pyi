@@ -1,10 +1,11 @@
 from typing import Optional
 
 from parsec._parsec_pyi.crypto import PublicKey, SigningKey, VerifyKey
+from parsec._parsec_pyi.enumerate import UserProfile
 from parsec._parsec_pyi.ids import DeviceID, DeviceLabel, HumanHandle, RealmID, UserID
 from parsec._parsec_pyi.time import DateTime
 
-from parsec.api.protocol import RealmRole, UserProfile
+from parsec.api.protocol import RealmRole
 
 class UserCertificate:
     def __init__(

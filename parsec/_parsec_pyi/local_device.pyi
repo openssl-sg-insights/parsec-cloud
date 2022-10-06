@@ -7,6 +7,7 @@ from parsec._parsec_pyi.crypto import (
     SigningKey,
     VerifyKey,
 )
+from parsec._parsec_pyi.enumerate import UserProfile
 from parsec._parsec_pyi.ids import (
     DeviceID,
     DeviceLabel,
@@ -17,8 +18,6 @@ from parsec._parsec_pyi.ids import (
     UserID,
 )
 from parsec._parsec_pyi.time import DateTime, TimeProvider
-
-from parsec.api.protocol.types import UserProfile
 
 class LocalDevice:
     def __init__(

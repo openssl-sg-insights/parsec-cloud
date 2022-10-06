@@ -1,16 +1,20 @@
 // Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 (eventually AGPL-3.0) 2016-present Scille SAS
 
-use libparsec::types::{CertificateSignerOwned, CertificateSignerRef, UserProfile};
-use pyo3::import_exception;
-use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyType};
-
-use crate::api_crypto::{PublicKey, SigningKey, VerifyKey};
-use crate::binding_utils::{
-    py_to_rs_realm_role, py_to_rs_user_profile, rs_to_py_realm_role, rs_to_py_user_profile,
+use pyo3::{
+    import_exception,
+    prelude::*,
+    types::{PyBytes, PyDict, PyType},
 };
-use crate::ids::{DeviceID, DeviceLabel, HumanHandle, RealmID, UserID};
-use crate::time::DateTime;
+
+use libparsec::types::{CertificateSignerOwned, CertificateSignerRef};
+
+use crate::{
+    api_crypto::{PublicKey, SigningKey, VerifyKey},
+    binding_utils::{py_to_rs_realm_role, rs_to_py_realm_role},
+    enumerate::UserProfile,
+    ids::{DeviceID, DeviceLabel, HumanHandle, RealmID, UserID},
+    time::DateTime,
+};
 
 import_exception!(parsec.api.data, DataError);
 
@@ -32,7 +36,7 @@ impl UserCertificate {
             [user_id: UserID, "user_id"],
             [human_handle: Option<HumanHandle>, "human_handle"],
             [public_key: PublicKey, "public_key"],
-            [profile, "profile", py_to_rs_user_profile]
+            [profile: UserProfile, "profile"]
         );
 
         Ok(Self(libparsec::types::UserCertificate {
@@ -44,7 +48,7 @@ impl UserCertificate {
             user_id: user_id.0,
             human_handle: human_handle.map(|human_handle| human_handle.0),
             public_key: public_key.0,
-            profile,
+            profile: profile.0,
         }))
     }
 
@@ -57,7 +61,7 @@ impl UserCertificate {
             [user_id: UserID, "user_id"],
             [human_handle: Option<HumanHandle>, "human_handle"],
             [public_key: PublicKey, "public_key"],
-            [profile, "profile", py_to_rs_user_profile]
+            [profile: UserProfile, "profile"]
         );
 
         let mut r = self.0.clone();
@@ -81,7 +85,7 @@ impl UserCertificate {
             r.public_key = x.0;
         }
         if let Some(x) = profile {
-            r.profile = x;
+            r.profile = x.0;
         }
 
         Ok(Self(r))
@@ -142,7 +146,7 @@ impl UserCertificate {
 
     #[getter]
     fn is_admin(&self) -> PyResult<bool> {
-        Ok(self.0.profile == UserProfile::Admin)
+        Ok(self.0.profile == libparsec::types::UserProfile::Admin)
     }
 
     #[getter]
@@ -174,8 +178,8 @@ impl UserCertificate {
     }
 
     #[getter]
-    fn profile(&self) -> PyResult<PyObject> {
-        rs_to_py_user_profile(&self.0.profile)
+    fn profile(&self) -> PyResult<UserProfile> {
+        Ok(UserProfile(self.0.profile))
     }
 }
 

@@ -1,5 +1,7 @@
 from typing import Any, Iterable, List, Optional, Tuple, Literal
 
+from parsec._parsec_pyi.crypto import HashDigest, PublicKey
+from parsec._parsec_pyi.enumerate import InvitationType, UserProfile
 from parsec._parsec_pyi.ids import (
     BlockID,
     RealmID,
@@ -10,13 +12,8 @@ from parsec._parsec_pyi.ids import (
     UserID,
     HumanHandle,
 )
-
-from parsec._parsec import PublicKey, InvitationToken
-
-from parsec._parsec_pyi.crypto import HashDigest
 from parsec._parsec_pyi.invite import InvitationToken
 from parsec._parsec_pyi.time import DateTime
-from parsec.api.protocol.types import UserProfile
 
 class AuthenticatedAnyCmdReq:
     def dump(self) -> bytes: ...
@@ -27,12 +24,6 @@ class InvitedAnyCmdReq:
     def load(buf: bytes) -> Any: ...
 
 # Invite
-
-class InvitationType:
-    DEVICE: InvitationType
-    USER: InvitationType
-    def __init__(self, value: str) -> None: ...
-    def value(self) -> str: ...
 
 class Invite1GreeterWaitPeerReq:
     def __init__(self, token: InvitationToken, greeter_public_key: PublicKey) -> None: ...

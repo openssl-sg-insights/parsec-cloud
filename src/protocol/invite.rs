@@ -22,6 +22,7 @@ use crate::{
     api_crypto,
     api_crypto::{HashDigest, PublicKey},
     binding_utils::py_to_rs_invitation_status,
+    enumerate::InvitationType,
     ids::{HumanHandle, UserID},
     invite,
     invite::InvitationToken,
@@ -30,50 +31,6 @@ use crate::{
 };
 
 import_exception!(parsec.api.protocol, ProtocolError);
-
-#[pyclass]
-#[derive(Clone)]
-pub(crate) struct InvitationType(pub libparsec::types::InvitationType);
-
-crate::binding_utils::gen_proto!(InvitationType, __repr__);
-crate::binding_utils::gen_proto!(InvitationType, __richcmp__, eq);
-
-#[pymethods]
-impl InvitationType {
-    #[classattr]
-    #[pyo3(name = "DEVICE")]
-    fn device() -> PyResult<&'static PyObject> {
-        lazy_static::lazy_static! {
-            static ref VALUE: PyObject = {
-                Python::with_gil(|py| {
-                    InvitationType(libparsec::types::InvitationType::Device).into_py(py)
-                })
-            };
-        };
-        Ok(&VALUE)
-    }
-
-    #[classattr]
-    #[pyo3(name = "USER")]
-    fn user() -> PyResult<&'static PyObject> {
-        lazy_static::lazy_static! {
-            static ref VALUE: PyObject = {
-                Python::with_gil(|py| {
-                    InvitationType(libparsec::types::InvitationType::User).into_py(py)
-                })
-            };
-        };
-        Ok(&VALUE)
-    }
-
-    #[getter]
-    fn value(&self) -> PyResult<&str> {
-        Ok(match self.0 {
-            libparsec::types::InvitationType::Device => "DEVICE",
-            libparsec::types::InvitationType::User => "USER",
-        })
-    }
-}
 
 fn py_to_rs_invitation_email_sent_status(
     email_sent: &PyAny,

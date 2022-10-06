@@ -140,7 +140,7 @@ class MemoryOrganizationComponent(BaseOrganizationComponent):
 
         users = 0
         active_users = 0
-        users_per_profile_detail = {p: {"active": 0, "revoked": 0} for p in UserProfile}
+        users_per_profile_detail = {p: {"active": 0, "revoked": 0} for p in UserProfile.iter()}
         for user in self._user_component._organizations[id].users.values():
             users += 1
             if user.revoked_on:

@@ -1,12 +1,9 @@
 from typing import Any, Optional, Union
-from parsec._parsec import (
-    DateTime,
-    OrganizationID,
-    VerifyKey,
-    EntryID,
-    InvitationToken,
-    InvitationType,
-)
+
+from parsec._parsec_pyi.crypto import VerifyKey
+from parsec._parsec_pyi.enumerate import InvitationType
+from parsec._parsec_pyi.ids import OrganizationID, EntryID
+from parsec._parsec_pyi.invite import InvitationToken
 
 class BackendAddr:
     def __init__(self, hostname: str, port: Optional[int], use_ssl: bool) -> None: ...

@@ -154,8 +154,8 @@ async def ask_info_new_user(
             click.echo("Invalid value")
             continue
 
-    choices = list(UserProfile)
-    for i, choice in enumerate(UserProfile):
+    choices = UserProfile.iter()
+    for i, choice in enumerate(UserProfile.iter()):
         display_choice = click.style(choice.value, fg="yellow")
         click.echo(f" {i} - {display_choice}")
     choice_index = await aprompt(

@@ -1,5 +1,6 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
 
+from parsec._parsec import UserProfile
 from parsec.api.protocol.base import (
     ProtocolError,
     MessageSerializationError,
@@ -22,7 +23,6 @@ from parsec.api.protocol.types import (
     OrganizationIDField,
     HumanHandleField,
     UserProfileField,
-    UserProfile,
     DeviceLabelField,
     DeviceLabel,
     StrBased,

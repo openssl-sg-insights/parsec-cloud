@@ -14,6 +14,11 @@ from parsec._parsec_pyi.crypto import (
     PublicKey,
 )
 
+from parsec._parsec_pyi.enumerate import (
+    InvitationType,
+    UserProfile,
+)
+
 from parsec._parsec_pyi.ids import (
     OrganizationID,
     EntryID,
@@ -119,7 +124,6 @@ from parsec._parsec_pyi.protocol import (
     InvitationDeletedReason,
     InvitationEmailSentStatus,
     InvitationStatus,
-    InvitationType,
     Invite1ClaimerWaitPeerRep,
     Invite1ClaimerWaitPeerRepInvalidState,
     Invite1ClaimerWaitPeerRepNotFound,
@@ -458,6 +462,9 @@ __all__ = [
     "VerifyKey",
     "PrivateKey",
     "PublicKey",
+    # Enumerate
+    "InvitationType",
+    "UserProfile",
     # Ids
     "OrganizationID",
     "EntryID",
@@ -550,7 +557,6 @@ __all__ = [
     "InvitationDeletedReason",
     "InvitationEmailSentStatus",
     "InvitationStatus",
-    "InvitationType",
     "Invite1ClaimerWaitPeerRep",
     "Invite1ClaimerWaitPeerRepInvalidState",
     "Invite1ClaimerWaitPeerRepNotFound",

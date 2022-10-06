@@ -69,30 +69,6 @@ pub fn py_to_rs_realm_role(role: &PyAny) -> PyResult<Option<libparsec::types::Re
     }))
 }
 
-pub fn py_to_rs_user_profile(profile: &PyAny) -> PyResult<libparsec::types::UserProfile> {
-    use libparsec::types::UserProfile::*;
-    Ok(match profile.getattr("name")?.extract::<&str>()? {
-        "ADMIN" => Admin,
-        "STANDARD" => Standard,
-        "OUTSIDER" => Outsider,
-        _ => unreachable!(),
-    })
-}
-
-pub fn rs_to_py_user_profile(profile: &libparsec::types::UserProfile) -> PyResult<PyObject> {
-    use libparsec::types::UserProfile::*;
-    Python::with_gil(|py| -> PyResult<PyObject> {
-        let cls = py.import("parsec.api.protocol")?.getattr("UserProfile")?;
-        let profile_name = match profile {
-            Admin => "ADMIN",
-            Standard => "STANDARD",
-            Outsider => "OUTSIDER",
-        };
-        let obj = cls.getattr(profile_name)?;
-        Ok(obj.into_py(py))
-    })
-}
-
 pub fn py_to_rs_invitation_status(status: &PyAny) -> PyResult<libparsec::types::InvitationStatus> {
     use libparsec::types::InvitationStatus::*;
     Ok(match status.getattr("name")?.extract::<&str>()? {

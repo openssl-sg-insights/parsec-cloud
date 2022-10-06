@@ -84,7 +84,7 @@ class BaseEnumField(Field):
         if not isinstance(value, str):
             raise ValidationError("Not string")
 
-        for choice in self.ENUM:
+        for choice in self.ENUM.iter():
             if choice.value == value:
                 return choice
         else:

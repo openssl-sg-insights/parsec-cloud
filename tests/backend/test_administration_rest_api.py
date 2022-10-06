@@ -624,7 +624,7 @@ async def test_organization_stats_users(
         "realms": 0,
     }
 
-    for profile in UserProfile:
+    for profile in UserProfile.iter():
         i = [
             i
             for i, v in enumerate(expected_stats["users_per_profile_detail"])

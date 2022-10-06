@@ -180,7 +180,7 @@ async def _add_random_users(
     """
     for _ in range(additional_users_number):
         name = "test_" + str(uuid4())[:9]
-        user_profile = random.choice(list(UserProfile))
+        user_profile = random.choice(UserProfile.iter())
         if user_profile == UserProfile.OUTSIDER:
             realm_role = random.choice([WorkspaceRole.READER, WorkspaceRole.CONTRIBUTOR])
         else:
