@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Iterable, Protocol, Type, TypeVar, Union
 
-from parsec._parsec import DateTime as RsDateTime
 from uuid import UUID as _UUID
 from enum import Enum
 from collections.abc import Mapping
@@ -22,6 +21,7 @@ from marshmallow.fields import (
     Field,
 )
 
+from parsec._parsec import DateTime as RsDateTime
 from parsec.types import FrozenDict as _FrozenDict
 from parsec.crypto import (
     SecretKey as _SecretKey,
