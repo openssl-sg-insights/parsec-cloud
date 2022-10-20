@@ -1,5 +1,6 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
 from __future__ import annotations
+from typing import Optional
 
 """
 Switch button implementation in PyQt5
@@ -9,12 +10,12 @@ Taken from:
 """
 
 from PyQt5.QtCore import QPropertyAnimation, QRectF, QSize, Qt, pyqtProperty
-from PyQt5.QtGui import QPainter
-from PyQt5.QtWidgets import QAbstractButton, QSizePolicy
+from PyQt5.QtGui import QPainter, QResizeEvent
+from PyQt5.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
 
 class SwitchButton(QAbstractButton):
-    def __init__(self, parent=None, track_radius=10, thumb_radius=8):
+    def __init__(self, parent: Optional[QWidget] = None, track_radius: int =10, thumb_radius: int =8) -> None:
         super().__init__(parent=parent)
         self.setCheckable(True)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -48,24 +49,24 @@ class SwitchButton(QAbstractButton):
             self._track_opacity = 1
 
     @pyqtProperty(int)
-    def offset(self):
+    def offset(self) -> int:
         return self._offset
 
     @offset.setter
-    def offset(self, value):
+    def offset(self, value: int) -> None:
         self._offset = value
         self.update()
 
-    def sizeHint(self):  # pylint: disable=invalid-name
+    def sizeHint(self) -> QSize:  # pylint: disable=invalid-name
         return QSize(
             4 * self._track_radius + 2 * self._margin, 2 * self._track_radius + 2 * self._margin
         )
 
-    def setChecked(self, checked):
+    def setChecked(self, checked: bool) -> None:
         super().setChecked(checked)
         self.offset = self._end_offset[checked]()
 
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self.offset = self._end_offset[self.isChecked()]()
 
