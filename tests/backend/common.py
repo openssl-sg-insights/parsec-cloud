@@ -102,7 +102,7 @@ from parsec.api.protocol import (
     vlob_update_serializer,
 )
 
-from tests.common import real_clock_timeout
+from tests.common import real_clock_timeout, BaseRpcApiClient
 
 
 def craft_http_request(
@@ -256,10 +256,18 @@ class CmdSock:
 
         return rep
 
-    async def __call__(self, ws, *args, req_post_processing: Callable = None, **kwargs):
-        check_rep = kwargs.pop("check_rep", self.check_rep_by_default)
-        await self._do_send(ws, req_post_processing, args, kwargs)
-        return await self._do_recv(ws, check_rep)
+    async def __call__(self, ws_or_rpc, *args, req_post_processing: Callable = None, **kwargs):
+        if isinstance(ws_or_rpc, BaseRpcApiClient):
+            req = {"cmd": self.cmd, **self.parse_args(self, *args, **kwargs)}
+            assert req_post_processing is None
+            return await ws_or_rpc.send(
+                req=req,
+                serializer=self.serializer,
+            )
+        else:
+            check_rep = kwargs.pop("check_rep", self.check_rep_by_default)
+            await self._do_send(ws_or_rpc, req_post_processing, args, kwargs)
+            return await self._do_recv(ws_or_rpc, check_rep)
 
     class AsyncCallRepBox:
         def __init__(self, do_recv):

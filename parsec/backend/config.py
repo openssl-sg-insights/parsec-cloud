@@ -106,6 +106,7 @@ class BackendConfig:
     db_url: str
     db_min_connections: int
     db_max_connections: int
+    sse_keepalive: Optional[int]
 
     blockstore_config: BaseBlockStoreConfig
 

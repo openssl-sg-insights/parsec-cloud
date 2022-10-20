@@ -1,9 +1,10 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) BUSL-1.1 (eventually AGPL-3.0) 2016-present Scille SAS
-from __future__ import annotations
 
-from base64 import b64decode
-from typing import NoReturn, Tuple, Optional
-from quart import Response, Blueprint, request, g, current_app
+from __future__ import annotations
+import trio
+from base64 import b64decode, b64encode
+from typing import AsyncIterator, NoReturn, Tuple, Optional
+from quart import Response, Blueprint, request, g, current_app, make_response
 from nacl.exceptions import CryptoError
 
 from parsec._parsec import DateTime
@@ -31,6 +32,7 @@ from parsec.backend.organization import (
 
 
 CONTENT_TYPE_MSGPACK = "application/msgpack"
+ACCEPT_TYPE_SSE = "text/event-stream"
 AUTHORIZATION_PARSEC_ED25519 = "PARSEC-SIGN-ED25519"
 SUPPORTED_API_VERSIONS = (
     API_V2_VERSION,
@@ -64,6 +66,7 @@ def _rpc_msgpack_rep(data: dict[str, object], api_version: ApiVersion) -> Respon
 # Instead we rely on the following HTTP status code:
 # - 404: Organization non found or invalid organization ID
 # - 401: Bad authentication info (bad Author/Signature/Timestamp headers)
+# - 406: Bad accept type (for the SSE events route)
 # - 415: Bad content-type
 # - 422: Unsupported API version
 
@@ -79,6 +82,8 @@ async def _do_handshake(
     backend: BackendApp,
     allow_missing_organization: bool,
     check_authentication: bool,
+    expected_content_type: Optional[str],
+    expected_accept_type: Optional[str],
 ) -> Tuple[ApiVersion, OrganizationID, Optional[Organization], Optional[User], Optional[Device]]:
     # The anonymous RPC API existed before the `Api-Version`/`Content-Type` fields
     # check where introduced, hence we have this workaround to provide backward compatibility
@@ -126,9 +131,11 @@ async def _do_handshake(
         if organization.is_expired:
             current_app.aborter(_rpc_msgpack_rep({"status": "expired_organization"}, api_version))
 
-    # 3) Check Content-Type
-    if request.headers.get("Content-Type") != CONTENT_TYPE_MSGPACK:
+    # 3) Check Content-Type & Accept
+    if expected_content_type and request.headers.get("Content-Type") != expected_content_type:
         _handshake_abort(415, api_version=api_version)
+    if expected_accept_type and request.headers.get("Accept") != expected_accept_type:
+        _handshake_abort(406, api_version=api_version)
 
     # 4) Check authentication
     if not check_authentication:
@@ -189,6 +196,8 @@ async def anonymous_api(raw_organization_id: str) -> Response:
         backend=backend,
         allow_missing_organization=allow_missing_organization,
         check_authentication=False,
+        expected_content_type=CONTENT_TYPE_MSGPACK,
+        expected_accept_type=None,
     )
 
     # Reply to GET
@@ -236,6 +245,8 @@ async def authenticated_api(raw_organization_id: str) -> Response:
         backend=backend,
         allow_missing_organization=False,
         check_authentication=True,
+        expected_content_type=CONTENT_TYPE_MSGPACK,
+        expected_accept_type=None,
     )
     assert isinstance(user, User)
     assert isinstance(device, Device)
@@ -269,3 +280,79 @@ async def authenticated_api(raw_organization_id: str) -> Response:
 
     cmd_rep = await cmd_func(client_ctx, msg)
     return _rpc_msgpack_rep(cmd_rep, api_version)
+
+
+@rpc_bp.route("/authenticated/<raw_organization_id>/events", methods=["GET"])
+async def authenticated_events_api(raw_organization_id: str) -> Response:
+    backend: BackendApp = g.backend
+
+    api_version, organization_id, _, user, device = await _do_handshake(
+        raw_organization_id=raw_organization_id,
+        backend=backend,
+        allow_missing_organization=False,
+        check_authentication=True,
+        # We don't care of Content-Type given the request has no body
+        expected_content_type=None,
+        expected_accept_type=ACCEPT_TYPE_SSE,
+    )
+    assert isinstance(user, User)
+    assert isinstance(device, Device)
+
+    client_ctx = AuthenticatedClientContext(
+        api_version=api_version,
+        organization_id=organization_id,
+        device_id=device.device_id,
+        human_handle=user.human_handle,
+        device_label=device.device_label,
+        profile=user.profile,
+        public_key=user.public_key,
+        verify_key=device.verify_key,
+    )
+
+    # Cancel scope will be closed automatically in case of backpressure issue
+    # Note we create it here instead of in `_send_events` to avoid concurrency
+    # issue if the cancellation kicks in between the moment we return the
+    # response object and when quart calls `_send_events`
+    client_ctx.cancel_scope = trio.CancelScope()
+
+    async def _send_events() -> AsyncIterator[bytes]:
+        assert client_ctx.cancel_scope is not None
+        with client_ctx.cancel_scope:
+            with backend.event_bus.connection_context() as client_ctx.event_bus_ctx:
+                await backend.events.connect_events(client_ctx)
+                # In SSE, the HTTP status code & headers are sent with the first event.
+                # This means the client has to wait for this first event to know for
+                # sure the connection was successful (in practice the server responds
+                # fast in case of error and potentially up to the keepalive time in case
+                # everything is ok).
+                # While not strictly needed, we send a keepalive event right away so
+                # that the client knows it is correctly connected without delay.
+                yield b":keepalive\n\n"
+                while True:
+                    # TODO: make the 30s keepalive configurable ?
+                    if backend.config.sse_keepalive is None:
+                        async for event in client_ctx.receive_events_channel:
+                            yield b"data:" + b64encode(event.dump()) + b"\n\n"
+                    else:
+                        with trio.move_on_after(backend.config.sse_keepalive) as scope:
+                            async for event in client_ctx.receive_events_channel:
+                                yield b"data:" + b64encode(event.dump()) + b"\n\n"
+                    if scope.cancelled_caught:
+                        # Keepalive is SSE is done by sending a comment
+                        # (see: https://html.spec.whatwg.org/multipage/server-sent-events.html#authoring-notes)
+                        yield b":keepalive\n\n"
+
+    response = await make_response(
+        _send_events(),
+        {
+            "Content-Type": ACCEPT_TYPE_SSE,
+            "Cache-Control": "no-cache",
+            "Transfer-Encoding": "chunked",
+        },
+    )
+    # SSE are long lasting query, so we must disable Quart DOS protection here
+    # TODO: this `timeout` attribute is from Quart example, should find out
+    # why typing is not happy with it...
+    response.timeout = None  # type: ignore[union-attr]
+    # TODO: typing error, should most likely fix in quart...
+    return response  # type: ignore[return-value]
