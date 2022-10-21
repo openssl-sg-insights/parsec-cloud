@@ -40,6 +40,6 @@ class StringToColor:
         hue = (hash % 359) / 360
         hash //= 360
         saturation = (hash % 90 + 100) / 240
-        hash //= cast(float, saturation)
+        hash //= cast(int, saturation)
         lightness = (hash % 50 + 150) / 240
         return cls(hue, lightness, saturation)

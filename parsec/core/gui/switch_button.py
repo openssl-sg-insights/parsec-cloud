@@ -9,8 +9,8 @@ Taken from:
 - https://stackoverflow.com/a/51825815/2846140
 """
 
-from PyQt5.QtCore import QPropertyAnimation, QRectF, QSize, Qt, pyqtProperty
-from PyQt5.QtGui import QPainter, QResizeEvent
+from PyQt5.QtCore import QEvent, QPropertyAnimation, QRectF, QSize, Qt, pyqtProperty
+from PyQt5.QtGui import QMouseEvent, QPainter, QResizeEvent
 from PyQt5.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
 
@@ -52,7 +52,7 @@ class SwitchButton(QAbstractButton):
     def offset(self) -> int:
         return self._offset
 
-    @offset.setter
+    @offset.setter # type: ignore[no-redef]
     def offset(self, value: int) -> None:
         self._offset = value
         self.update()
@@ -64,13 +64,13 @@ class SwitchButton(QAbstractButton):
 
     def setChecked(self, checked: bool) -> None:
         super().setChecked(checked)
-        self.offset = self._end_offset[checked]()
+        self.offset = self._end_offset[checked]() # type: ignore[assignment]
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        self.offset = self._end_offset[self.isChecked()]()
+        self.offset = self._end_offset[self.isChecked()]() # type: ignore[assignment]
 
-    def paintEvent(self, event):  # pylint: disable=invalid-name, unused-argument
+    def paintEvent(self, event: QEvent) -> None:  # pylint: disable=invalid-name, unused-argument
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setPen(Qt.NoPen)
@@ -100,7 +100,8 @@ class SwitchButton(QAbstractButton):
         p.setBrush(thumb_brush)
         p.setOpacity(thumb_opacity)
         p.drawEllipse(
-            self.offset - self._thumb_radius,
+                # `offset` is a property this is fine
+                self.offset - self._thumb_radius, # type: ignore[operator]
             self._base_offset - self._thumb_radius,
             2 * self._thumb_radius,
             2 * self._thumb_radius,
@@ -112,7 +113,8 @@ class SwitchButton(QAbstractButton):
         p.setFont(font)
         p.drawText(
             QRectF(
-                self.offset - self._thumb_radius,
+                # `offset` is a property this is fine
+                self.offset - self._thumb_radius,# type: ignore[operator]
                 self._base_offset - self._thumb_radius,
                 2 * self._thumb_radius,
                 2 * self._thumb_radius,
@@ -121,7 +123,7 @@ class SwitchButton(QAbstractButton):
             self._thumb_text[self.isChecked()],
         )
 
-    def mouseReleaseEvent(self, event):  # pylint: disable=invalid-name
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # pylint: disable=invalid-name
         super().mouseReleaseEvent(event)
         if event.button() == Qt.LeftButton:
             anim = QPropertyAnimation(self, b"offset", self)
@@ -130,6 +132,6 @@ class SwitchButton(QAbstractButton):
             anim.setEndValue(self._end_offset[self.isChecked()]())
             anim.start()
 
-    def enterEvent(self, event):  # pylint: disable=invalid-name
+    def enterEvent(self, event: QEvent) -> None:  # pylint: disable=invalid-name
         self.setCursor(Qt.PointingHandCursor)
         super().enterEvent(event)
