@@ -6,11 +6,9 @@ from PyQt5.QtCore import QDate, QRect, Qt
 from PyQt5.QtGui import QColor, QBrush, QFont, QPainter
 from PyQt5.QtWidgets import QCalendarWidget, QWidget
 
-from parsec._parsec import DateTime
-
 
 class CalendarWidget(QCalendarWidget):
-    def __init__(self, parent: Optional[QWidget] =None):
+    def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
         self.setDateEditEnabled(True)
@@ -43,12 +41,12 @@ class CalendarWidget(QCalendarWidget):
         self.setWeekdayTextFormat(Qt.Saturday, cell_text_format)
         self.setWeekdayTextFormat(Qt.Sunday, cell_text_format)
 
-    def paintCell(self, painter: QPainter, rect: QRect, date: QDate) -> None:
+    def paintCell(self, painter: QPainter, rect: QRect, date: QDate) -> None:  # type: ignore[override]
         painter.save()
 
         is_invalid_date = (
-            date < self.minimumDate()
-            or date > self.maximumDate()
+            date < self.minimumDate()  # type: ignore[operator]
+            or date > self.maximumDate()  # type: ignore[operator]
             or date.month() != self.monthShown()
             or date.year() != self.yearShown()
         )

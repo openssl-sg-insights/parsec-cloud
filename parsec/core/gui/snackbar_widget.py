@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import platform
+from typing import Callable, Optional, cast
 
 from PyQt5.QtCore import (
     Qt,
@@ -15,10 +16,11 @@ from PyQt5.QtCore import (
     QObject,
     QSize,
 )
-from PyQt5.QtGui import QPainter, QBrush, QColor, QCursor
+from PyQt5.QtGui import QPainter, QBrush, QColor, QCursor, QPixmap, QWindow
 from PyQt5.QtWidgets import QWidget
 
 from parsec.core.gui.custom_widgets import Pixmap
+from parsec.core.gui.main_window import MainWindow
 from parsec.core.gui.parsec_application import ParsecApp
 from parsec.core.gui.ui.snackbar_widget import Ui_SnackbarWidget
 
@@ -26,16 +28,24 @@ from parsec.core.gui.ui.snackbar_widget import Ui_SnackbarWidget
 class SnackbarWidget(QWidget, Ui_SnackbarWidget):
     _dismissed = pyqtSignal(QWidget)
 
-    def _set_opacity(self, o):
+    def _set_opacity(self, o: float) -> None:
         self._opacity = o
         self.setWindowOpacity(o)
 
-    def _get_opacity(self):
+    def _get_opacity(self) -> float:
         return self._opacity
 
     opacity = pyqtProperty(float, fset=_set_opacity, fget=_get_opacity)
 
-    def __init__(self, msg, icon=None, timeout=3000, action_text=None, action=None, animate=True):
+    def __init__(
+        self,
+        msg: str,
+        icon: Optional[QPixmap] = None,
+        timeout: int = 3000,
+        action_text: Optional[str] = None,
+        action: Optional[Callable[..., None]] = None,
+        animate: bool = True,
+    ):
         super().__init__()
         self.setupUi(self)
         self.animate = animate
@@ -77,18 +87,19 @@ class SnackbarWidget(QWidget, Ui_SnackbarWidget):
         else:
             self._set_opacity(1.0)
 
-    def _on_action_clicked(self):
+    def _on_action_clicked(self) -> None:
+        assert self.action is not None
         self.action()
         self.timer.stop()
         if self.animate:
             self.show_animation.stop()
             self.hide_animation.start()
 
-    def set_index(self, index):
+    def set_index(self, index: int) -> None:
         self.index = index
         self.move_popup()
 
-    def paintEvent(self, _):
+    def paintEvent(self, _: object) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         rect = QRect()
@@ -100,7 +111,7 @@ class SnackbarWidget(QWidget, Ui_SnackbarWidget):
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(rect, 10, 10)
 
-    def move_popup(self):
+    def move_popup(self) -> None:
         main_window = self.parentWidget()
         if not main_window:
             return
@@ -115,20 +126,20 @@ class SnackbarWidget(QWidget, Ui_SnackbarWidget):
         self.set_visible(y > 30 and main_window.isVisible())
         self.setGeometry(x, y, width, height)
 
-    def _on_timeout(self):
+    def _on_timeout(self) -> None:
         if self.animate:
             self.show_animation.stop()
             self.hide_animation.start()
         else:
             self.hide()
 
-    def set_visible(self, visible):
+    def set_visible(self, visible: bool) -> None:
         if not visible:
             super().hide()
         else:
             super().show()
 
-    def hide(self):
+    def hide(self) -> None:
         if self.animate:
             self.show_animation.stop()
             self.hide_animation.stop()
@@ -136,7 +147,7 @@ class SnackbarWidget(QWidget, Ui_SnackbarWidget):
         super().hide()
         self._dismissed.emit(self)
 
-    def show(self):
+    def show(self) -> None:
         self.move_popup()
         super().show()
         if self.animate:
@@ -148,13 +159,13 @@ class SnackbarWidget(QWidget, Ui_SnackbarWidget):
 
 
 class SnackbarManager(QObject):
-    def __init__(self, main_window):
+    def __init__(self, main_window: QWindow):
         super().__init__(parent=main_window)
-        self.snackbars = []
+        self.snackbars: list[SnackbarWidget] = []
         main_window.installEventFilter(self)
         self.destroyed.connect(self.clear)
 
-    def eventFilter(self, obj, event):
+    def eventFilter(self, obj: object, event: QEvent) -> bool:
         if (
             event.type() == QEvent.Move
             or event.type() == QEvent.Resize
@@ -173,31 +184,31 @@ class SnackbarManager(QObject):
             self.snackbars = []
         return False
 
-    def add_snackbar(self, snackbar):
-        snackbar.setParent(self.parent())
+    def add_snackbar(self, snackbar: SnackbarWidget) -> None:
+        snackbar.setParent(cast(QWidget, self.parent()))  # downcast to QWidget
         snackbar._dismissed.connect(self._on_dismissed)
         self.snackbars.insert(0, snackbar)
         for i, sb in enumerate(self.snackbars):
             sb.set_index(i)
         snackbar.show()
 
-    def clear(self):
+    def clear(self) -> None:
         self.snackbars = []
 
-    def _remove_snackbar(self, snackbar):
+    def _remove_snackbar(self, snackbar: SnackbarWidget) -> None:
         try:
             self.snackbars.remove(snackbar)
         except ValueError:
             pass
 
-    def _on_dismissed(self, snackbar):
+    def _on_dismissed(self, snackbar: SnackbarWidget) -> None:
         self._remove_snackbar(snackbar)
-        snackbar.setParent(None)
+        snackbar.setParent(None)  # type: ignore[call-overload]
         for i, sb in enumerate(self.snackbars):
             sb.set_index(i)
 
     @classmethod
-    def inform(cls, msg, timeout=3000, action_text=None, action=None, animate=True):
+    def inform(cls, msg: str, timeout: int = 3000, action_text: Optional[str] = None, action: Optional[Callable[..., None]] = None, animate: bool = True) -> None:  # type: ignore[misc]
         main_window = ParsecApp.get_main_window()
         if not main_window:
             return
@@ -206,10 +217,10 @@ class SnackbarManager(QObject):
         snackbar = SnackbarWidget(
             msg, icon=pix, timeout=timeout, action_text=action_text, action=action, animate=animate
         )
-        main_window.snackbar_manager.add_snackbar(snackbar)
+        cast(MainWindow, main_window).snackbar_manager.add_snackbar(snackbar)
 
     @classmethod
-    def congratulate(cls, msg, timeout=3000, action_text=None, action=None, animate=True):
+    def congratulate(cls, msg: str, timeout: int = 3000, action_text: Optional[str] = None, action: Optional[Callable[..., None]] = None, animate: bool = True) -> None:  # type: ignore[misc]
         main_window = ParsecApp.get_main_window()
         if not main_window:
             return
@@ -218,10 +229,10 @@ class SnackbarManager(QObject):
         snackbar = SnackbarWidget(
             msg, icon=pix, timeout=timeout, action_text=action_text, action=action, animate=animate
         )
-        main_window.snackbar_manager.add_snackbar(snackbar)
+        cast(MainWindow, main_window).snackbar_manager.add_snackbar(snackbar)
 
     @classmethod
-    def warn(cls, msg, timeout=3000, action_text=None, action=None, animate=True):
+    def warn(cls, msg: str, timeout: int = 3000, action_text: Optional[str] = None, action: Optional[Callable[..., None]] = None, animate: bool = True) -> None:  # type: ignore[misc]
         main_window = ParsecApp.get_main_window()
         if not main_window:
             return
@@ -230,4 +241,4 @@ class SnackbarManager(QObject):
         snackbar = SnackbarWidget(
             msg, icon=pix, timeout=timeout, action_text=action_text, action=action, animate=animate
         )
-        main_window.snackbar_manager.add_snackbar(snackbar)
+        cast(MainWindow, main_window).snackbar_manager.add_snackbar(snackbar)
