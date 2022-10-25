@@ -1,12 +1,13 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
 from __future__ import annotations
 
+from typing import Tuple
+
 from PyQt5.QtCore import QRegularExpression
 from PyQt5.QtGui import QValidator, QIntValidator, QRegularExpressionValidator
 
 from parsec.api.data import EntryName
 from parsec.api.protocol import OrganizationID, UserID, DeviceLabel, HumanHandle
-from parsec.core.gui.workspaces_widget import Tuple
 from parsec.core.types import (
     BackendAddr,
     BackendActionAddr,

@@ -2,8 +2,6 @@
 from __future__ import annotations
 from typing import cast
 
-from PyQt5.QtCore import Qt
-
 try:
     from parsec.core.gui._resources_rc import *  # noqa
 except ImportError as exc:

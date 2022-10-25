@@ -21,7 +21,9 @@ def get_translation_string(elem: ET.Element) -> Optional[str]:
     return tr.text if tr is not None else None
 
 
-def extract_qt(fileobj: str, keywords: object, comment_tags: object, options: object) -> Iterable[object]:
+def extract_qt(
+    fileobj: str, keywords: object, comment_tags: object, options: object
+) -> Iterable[object]:
     tree = ET.parse(fileobj)
     root = tree.getroot()
     for message in root.iter("message"):

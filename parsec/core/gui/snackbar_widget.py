@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import platform
-from typing import Callable, Optional, cast
+from typing import TYPE_CHECKING, Callable, Optional, cast
 
 from PyQt5.QtCore import (
     Qt,
@@ -20,9 +20,11 @@ from PyQt5.QtGui import QPainter, QBrush, QColor, QCursor, QPixmap, QWindow
 from PyQt5.QtWidgets import QWidget
 
 from parsec.core.gui.custom_widgets import Pixmap
-from parsec.core.gui.main_window import MainWindow
 from parsec.core.gui.parsec_application import ParsecApp
 from parsec.core.gui.ui.snackbar_widget import Ui_SnackbarWidget
+
+if TYPE_CHECKING:
+    from parsec.core.gui.main_window import MainWindow
 
 
 class SnackbarWidget(QWidget, Ui_SnackbarWidget):

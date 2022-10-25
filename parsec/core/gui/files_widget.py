@@ -1,19 +1,22 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
 from __future__ import annotations
+from PyQt5.QtGui import QKeyEvent
 
 import trio
 import pathlib
-from typing import Optional, Iterable, Tuple, List
+from typing import Any, Optional, Iterable, Tuple, List, cast
 from parsec._parsec import DateTime
 from enum import IntEnum
 from structlog import get_logger
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import QEvent, Qt, pyqtSignal
 from PyQt5.QtWidgets import QWidget
 
 from parsec.api.data import EntryName
 from parsec.core.core_events import CoreEvent
 from parsec.core.gui.file_status_widget import FileStatusWidget
 from parsec.core.gui.snackbar_widget import SnackbarManager
+from parsec.core.logged_core import LoggedCore
+from parsec.core.mountpoint import MountpointManager
 from parsec.core.types import WorkspaceRole, EntryID
 from parsec.core.fs import FsPath, WorkspaceFS, WorkspaceFSTimestamped
 from parsec.core.fs.exceptions import (
@@ -40,6 +43,7 @@ from parsec.core.gui.workspace_roles import get_role_translation
 from parsec.core.gui.ui.files_widget import Ui_FilesWidget
 from parsec.core.gui.file_table import PasteStatus
 from parsec.core.types import DEFAULT_BLOCK_SIZE
+from parsec.event_bus import EventBus, EventCallback
 
 
 logger = get_logger()
@@ -54,7 +58,7 @@ class CancelException(Exception):
     pass
 
 
-async def _do_rename(workspace_fs, paths):
+async def _do_rename(workspace_fs: WorkspaceFS, paths: list[Tuple[FsPath, FsPath, FsPath]]) -> None:
     new_names = {}
     for (old_path, new_path, entry_id) in paths:
         try:
@@ -66,7 +70,9 @@ async def _do_rename(workspace_fs, paths):
             raise JobResultError("not-empty", multi=len(paths) > 1) from exc
 
 
-async def _do_delete(workspace_fs, files, silent=False):
+async def _do_delete(
+    workspace_fs: WorkspaceFS, files: list[Tuple[FsPath, FileType]], silent: bool = False
+) -> None:
     for path, file_type in files:
         try:
             if file_type == FileType.Folder:
@@ -78,8 +84,13 @@ async def _do_delete(workspace_fs, files, silent=False):
                 raise JobResultError("error", multi=len(files) > 1) from exc
 
 
-async def _do_copy_files(workspace_fs, target_dir, source_files, source_workspace):
-    last_exc = None
+async def _do_copy_files(
+    workspace_fs: WorkspaceFS,
+    target_dir: FsPath,
+    source_files: list[Tuple[FsPath, FileType]],
+    source_workspace: WorkspaceFS,
+) -> None:
+    last_exc: Optional[Exception] = None
     error_count = 0
     for src, src_type in source_files:
         # In order to be able to rename the file if a file of the same name already exists
@@ -121,9 +132,14 @@ async def _do_copy_files(workspace_fs, target_dir, source_files, source_workspac
         raise JobResultError("error", last_exc=last_exc, error_count=error_count)
 
 
-async def _do_move_files(workspace_fs, target_dir, source_files, source_workspace):
+async def _do_move_files(
+    workspace_fs: WorkspaceFS,
+    target_dir: FsPath,
+    source_files: list[Tuple[FsPath, FileType]],
+    source_workspace: WorkspaceFS,
+) -> None:
     error_count = 0
-    last_exc = None
+    last_exc: Optional[Exception] = None
     for src, src_type in source_files:
         # In order to be able to rename the file if a file of the same name already exists
         # we need the name without extensions.
@@ -161,7 +177,9 @@ async def _do_move_files(workspace_fs, target_dir, source_files, source_workspac
         raise JobResultError("error", last_exc=last_exc, error_count=error_count)
 
 
-async def _do_folder_stat(workspace_fs, path, default_selection):
+async def _do_folder_stat(
+    workspace_fs: WorkspaceFS, path: FsPath, default_selection: Any
+) -> Tuple[FsPath, object, object, Any]:
     stats = {}
     dir_stat = await workspace_fs.path_info(path)
     # Retrieve children info, this is not an atomic operation so our view
@@ -170,9 +188,9 @@ async def _do_folder_stat(workspace_fs, path, default_selection):
     # but later update on existing files will appear).
     # We consider this fine enough given a change in the folder should lead
     # to an event from the corefs which in turn will re-trigger this stat code
-    for child in dir_stat["children"]:
+    for child in cast(list[pathlib.Path], dir_stat["children"]):
         try:
-            child_stat = await workspace_fs.path_info(path / child)
+            child_stat = await workspace_fs.path_info(path / child)  # type: ignore[operator]
         except FSFileNotFoundError:
             # The child entry as been concurrently removed, just ignore it
             continue
@@ -184,7 +202,7 @@ async def _do_folder_stat(workspace_fs, path, default_selection):
     return path, dir_stat["id"], stats, default_selection
 
 
-async def _do_folder_create(workspace_fs, path):
+async def _do_folder_create(workspace_fs: WorkspaceFS, path: FsPath) -> None:
     try:
         await workspace_fs.mkdir(path)
     except FileExistsError as exc:
@@ -192,15 +210,15 @@ async def _do_folder_create(workspace_fs, path):
 
 
 async def _do_remount_timestamped(
-    mountpoint_manager,
-    workspace_fs,
-    timestamp,
-    path,
-    file_type,
-    open_after_load,
-    close_after_load,
-    reload_after_remount,
-):
+    mountpoint_manager: MountpointManager,
+    workspace_fs: WorkspaceFS,
+    timestamp: DateTime,
+    path: FsPath,
+    file_type: FileType,
+    open_after_load: bool,
+    close_after_load: bool,
+    reload_after_remount: bool,
+) -> Tuple[WorkspaceFS, FsPath, FileType, bool, bool, bool]:
     await mountpoint_manager.remount_workspace_new_timestamp(
         workspace_fs.workspace_id,
         workspace_fs.timestamp if isinstance(workspace_fs, WorkspaceFSTimestamped) else None,
@@ -217,7 +235,12 @@ class Clipboard:
         Copied = 1
         Cut = 2
 
-    def __init__(self, files, status, source_workspace=None):
+    def __init__(
+        self,
+        files: list[FsPath],
+        status: Clipboard.Status,
+        source_workspace: Optional[WorkspaceFS] = None,
+    ) -> None:
         self.files = files
         self.source_workspace = source_workspace
         self.status = status
@@ -259,7 +282,9 @@ class FilesWidget(QWidget, Ui_FilesWidget):
 
     folder_changed = pyqtSignal(EntryName, str)
 
-    def __init__(self, core, jobs_ctx, event_bus, *args, **kwargs):
+    def __init__(
+        self, core: LoggedCore, jobs_ctx: Any, event_bus: EventBus, *args: Any, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.setupUi(self)
 
@@ -269,8 +294,8 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         self.core = core
         self.jobs_ctx = jobs_ctx
         self.event_bus = event_bus
-        self.workspace_fs = None
-        self.clipboard = None
+        self.workspace_fs: Optional[WorkspaceFS] = None
+        self.clipboard: Optional[Clipboard] = None
 
         self.button_back.clicked.connect(self.back_clicked)
         self.button_back.apply_style()
@@ -336,17 +361,29 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         self.reload_timestamped_success.connect(self._on_reload_timestamped_success)
         self.reload_timestamped_error.connect(self._on_reload_timestamped_error)
 
-        self.event_bus.connect(CoreEvent.FS_ENTRY_SYNCED, self._on_fs_entry_synced)
-        self.event_bus.connect(CoreEvent.FS_ENTRY_UPDATED, self._on_fs_entry_updated)
-        self.event_bus.connect(CoreEvent.FS_ENTRY_DOWNSYNCED, self._on_fs_entry_downsynced)
-        self.event_bus.connect(CoreEvent.SHARING_UPDATED, self._on_sharing_updated)
+        self.event_bus.connect(
+            CoreEvent.FS_ENTRY_SYNCED, cast(EventCallback, self._on_fs_entry_synced)
+        )
+        self.event_bus.connect(
+            CoreEvent.FS_ENTRY_UPDATED, cast(EventCallback, self._on_fs_entry_updated)
+        )
+        self.event_bus.connect(
+            CoreEvent.FS_ENTRY_DOWNSYNCED, cast(EventCallback, self._on_fs_entry_downsynced)
+        )
+        self.event_bus.connect(
+            CoreEvent.SHARING_UPDATED, cast(EventCallback, self._on_sharing_updated)
+        )
 
-    def disconnect_all(self):
+    def disconnect_all(self) -> None:
         pass
 
     def set_workspace_fs(
-        self, wk_fs, current_directory=FsPath("/"), default_selection=None, clipboard=None
-    ):
+        self,
+        wk_fs: WorkspaceFS,
+        current_directory: FsPath = FsPath("/"),
+        default_selection: Optional[Any] = None,
+        clipboard: Optional[Any] = None,
+    ) -> None:
         self.table_files.clear()
         self.current_directory = current_directory
         self.workspace_fs = wk_fs
@@ -380,10 +417,10 @@ class FilesWidget(QWidget, Ui_FilesWidget):
                 )
         self.reset(default_selection)
 
-    def _on_sort_clicked(self, column):
+    def _on_sort_clicked(self, column: Any) -> None:
         self.table_files.sortItems(column.value)
 
-    def _on_selection_changed(self):
+    def _on_selection_changed(self) -> None:
         selected_count = len(self.table_files.selected_files())
         file_count = max(self.table_files.rowCount() - 1, 0)
         if not file_count:
@@ -401,32 +438,35 @@ class FilesWidget(QWidget, Ui_FilesWidget):
                 _("TEXT_FILE_FOLDER_INFO_NO_SELECTED_count").format(count=file_count)
             )
 
-    def reset(self, default_selection=None):
+    def reset(self, default_selection: Optional[Any] = None) -> None:
+        assert self.workspace_fs is not None
         workspace_name = self.workspace_fs.get_workspace_name()
         # Reload without any delay
         self.reload(default_selection, delay=0)
         self.table_files.sortItems(0)
         self.folder_changed.emit(workspace_name, str(self.current_directory))
 
-    def on_get_file_path_clicked(self):
+    def on_get_file_path_clicked(self) -> None:
         files = self.table_files.selected_files()
         if len(files) != 1:
             return
         path = self.current_directory / files[0].name
+        assert self.workspace_fs is not None
         addr = self.workspace_fs.generate_file_link(path)
         desktop.copy_to_clipboard(addr.to_url())
         SnackbarManager.inform(_("TEXT_FILE_LINK_COPIED_TO_CLIPBOARD"))
 
-    def on_get_file_path_timestamp_clicked(self):
+    def on_get_file_path_timestamp_clicked(self) -> None:
         files = self.table_files.selected_files()
         if len(files) != 1:
             return
         path = self.current_directory / files[0].name
+        assert self.workspace_fs is not None
         ts_addr = self.workspace_fs.generate_file_link(path, timestamp=DateTime.now())
         desktop.copy_to_clipboard(ts_addr.to_url())
         SnackbarManager.inform(_("TEXT_FILE_LINK_COPIED_TO_CLIPBOARD"))
 
-    def on_copy_clicked(self):
+    def on_copy_clicked(self) -> None:
         files = self.table_files.selected_files()
         files_to_copy = []
         for f in files:
@@ -437,17 +477,19 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         if self.clipboard and self.clipboard.status == Clipboard.Status.Cut:
             if (
                 len(self.clipboard.files)
-                and self.clipboard.files[0][0].parent == self.current_directory
+                and self.clipboard.files[0][0].parent == self.current_directory  # type: ignore[index]
             ):
-                self.table_files.reset_cut_status([f[0].name.str for f in self.clipboard.files])
+                self.table_files.reset_cut_status([f[0].name.str for f in self.clipboard.files])  # type: ignore[index]
 
         self.clipboard = Clipboard(
-            files=files_to_copy, status=Clipboard.Status.Copied, source_workspace=self.workspace_fs
+            files=cast(List[FsPath], files_to_copy),
+            status=Clipboard.Status.Copied,
+            source_workspace=self.workspace_fs,
         )
         self.global_clipboard_updated.emit(self.clipboard)
         self.table_files.paste_status = PasteStatus(status=PasteStatus.Status.Enabled)
 
-    def on_cut_clicked(self):
+    def on_cut_clicked(self) -> None:
         files = self.table_files.selected_files()
         files_to_cut = []
         rows = []
@@ -459,12 +501,14 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             files_to_cut.append((self.current_directory / f.name, f.type))
         self.table_files.set_rows_cut(rows)
         self.clipboard = Clipboard(
-            files=files_to_cut, status=Clipboard.Status.Cut, source_workspace=self.workspace_fs
+            files=cast(List[FsPath], files_to_cut),
+            status=Clipboard.Status.Cut,
+            source_workspace=self.workspace_fs,
         )
         self.global_clipboard_updated.emit(self.clipboard)
         self.table_files.paste_status = PasteStatus(status=PasteStatus.Status.Enabled)
 
-    def on_paste_clicked(self):
+    def on_paste_clicked(self) -> None:
         if not self.clipboard:
             return
 
@@ -494,27 +538,28 @@ class FilesWidget(QWidget, Ui_FilesWidget):
                 source_workspace=self.clipboard.source_workspace,
             )
 
-    def _on_move_success(self, job):
+    def _on_move_success(self, job: QtToTrioJob) -> None:
         self.reset()
 
-    def _on_move_error(self, job):
+    def _on_move_error(self, job: QtToTrioJob) -> None:
         if not getattr(job.exc, "params", None):
             return
-        if isinstance(job.exc.params.get("last_exc", None), FSInvalidArgumentError):
+        if isinstance(job.exc.params.get("last_exc", None), FSInvalidArgumentError):  # type: ignore[union-attr]
             show_error(self, _("TEXT_FILE_FOLDER_MOVED_INTO_ITSELF_ERROR"))
         else:
             show_error(self, _("TEXT_FILE_PASTE_ERROR"))
 
         self.reset()
 
-    def _on_copy_success(self, job):
+    def _on_copy_success(self, job: QtToTrioJob) -> None:
         self.reset()
 
-    def _on_copy_error(self, job):
+    def _on_copy_error(self, job: QtToTrioJob) -> None:
         show_error(self, _("TEXT_FILE_PASTE_ERROR"))
         self.reset()
 
-    def show_history(self, path):
+    def show_history(self, path: FsPath) -> None:
+        assert self.workspace_fs is not None
         FileHistoryWidget.show_modal(
             jobs_ctx=self.jobs_ctx,
             workspace_fs=self.workspace_fs,
@@ -527,7 +572,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             on_finished=None,
         )
 
-    def show_selected_file_history(self):
+    def show_selected_file_history(self) -> None:
         files = self.table_files.selected_files()
         if len(files) > 1:
             show_error(self, _("TEXT_FILE_HISTORY_MULTIPLE_FILES_SELECTED_ERROR"))
@@ -538,10 +583,10 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         selected_path = self.current_directory / files[0].name
         self.show_history(selected_path)
 
-    def show_current_folder_history(self):
+    def show_current_folder_history(self) -> None:
         self.show_history(self.current_directory)
 
-    def show_status(self, path):
+    def show_status(self, path: FsPath) -> None:
         FileStatusWidget.show_modal(
             jobs_ctx=self.jobs_ctx,
             workspace_fs=self.workspace_fs,
@@ -551,7 +596,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             on_finished=None,
         )
 
-    def show_selected_file_status(self):
+    def show_selected_file_status(self) -> None:
         files = self.table_files.selected_files()
         if len(files) > 1:
             show_error(self, _("TEXT_FILE_STATUS_MULTIPLE_FILES_SELECTED_ERROR"))
@@ -559,10 +604,10 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         selected_path = self.current_directory / files[0].name
         self.show_status(selected_path)
 
-    def show_current_folder_status(self):
+    def show_current_folder_status(self) -> None:
         self.show_status(self.current_directory)
 
-    def rename_files(self):
+    def rename_files(self) -> None:
         files = self.table_files.selected_files()
         if len(files) == 1:
             selection_end = files[0].name.find(".")
@@ -622,7 +667,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
                 ],
             )
 
-    def delete_files(self):
+    def delete_files(self) -> None:
         files = self.table_files.selected_files()
         if len(files) == 1:
             result = ask_question(
@@ -648,11 +693,11 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             files=[(self.current_directory / f.name, f.type) for f in files],
         )
 
-    def on_open_current_dir_clicked(self):
+    def on_open_current_dir_clicked(self) -> None:
         self.desktop_open_files([None])
 
-    def desktop_open_files(self, names: Iterable[Optional[str]]):
-
+    def desktop_open_files(self, names: Iterable[Optional[str]]) -> None:
+        assert self.workspace_fs is not None
         paths = [
             self.core.mountpoint_manager.get_path_in_mountpoint(
                 self.workspace_fs.workspace_id,
@@ -667,7 +712,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             (self, "file_open_success"), (self, "file_open_error"), desktop.open_files_job, paths
         )
 
-    def open_files(self):
+    def open_files(self) -> None:
         files = self.table_files.selected_files()
         if len(files) == 1:
             self.desktop_open_files([files[0].name])
@@ -682,7 +727,10 @@ class FilesWidget(QWidget, Ui_FilesWidget):
                 return
             self.desktop_open_files([f.name for f in files])
 
-    def _on_file_open_success(self, job):
+    def _on_file_open_success(self, job: QtToTrioJob) -> None:
+        assert job.ret is not None
+        status: Optional[Any]
+        paths: list[FsPath]
         status, paths = job.ret
         if not status:
             if len(paths) > 1:
@@ -690,10 +738,10 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             else:
                 show_error(self, _("TEXT_FILE_OPEN_ERROR_file").format(file=paths[0].name))
 
-    def _on_file_open_error(self, job):
+    def _on_file_open_error(self, job: QtToTrioJob) -> None:
         logger.error("Failed to open a file, should not happen")
 
-    def item_activated(self, file_type, file_name):
+    def item_activated(self, file_type: FileType, file_name: str) -> None:
         if file_type == FileType.ParentFolder:
             self.load(self.current_directory.parent)
         elif file_type == FileType.ParentWorkspace:
@@ -703,7 +751,9 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         elif file_type == FileType.Folder:
             self.load(self.current_directory / file_name)
 
-    def reload(self, default_selection=None, delay=RELOAD_FILES_LIST_THROTTLE_DELAY):
+    def reload(
+        self, default_selection: Optional[Any] = None, delay: int = RELOAD_FILES_LIST_THROTTLE_DELAY
+    ) -> None:
         self.jobs_ctx.submit_throttled_job(
             "files_widget.reload",
             delay,
@@ -715,7 +765,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             default_selection=default_selection,
         )
 
-    def load(self, directory, default_selection=None):
+    def load(self, directory: FsPath, default_selection: Optional[Any] = None) -> None:
         self.spinner.show()
         self.label_elements.hide()
         self.table_files.setEnabled(False)
@@ -732,7 +782,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
 
     # Import entry points
 
-    def import_files_clicked(self):
+    def import_files_clicked(self) -> None:
         paths, filters = QDialogInProcess.getOpenFileNames(
             self, _("TEXT_FILE_IMPORT_FILES"), self.default_import_path
         )
@@ -747,7 +797,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             self.current_directory,
         )
 
-    def import_folder_clicked(self):
+    def import_folder_clicked(self) -> None:
         path = QDialogInProcess.getExistingDirectory(
             self, _("TEXT_FILE_IMPORT_FOLDER"), self.default_import_path
         )
@@ -762,22 +812,23 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             self.current_directory,
         )
 
-    def on_files_dropped(self, sources, dest):
+    def on_files_dropped(self, sources: list[object], dest: str) -> None:
         if dest == "..":
-            dest = self.current_directory.parent
+            dest_path = self.current_directory.parent
         elif dest == ".":
-            dest = self.current_directory
+            dest_path = self.current_directory
         else:
-            dest = self.current_directory / dest
+            dest_path = self.current_directory / dest
         self.jobs_ctx.submit_job(
-            (self, "import_success"), (self, "import_error"), self._do_import, sources, dest
+            (self, "import_success"), (self, "import_error"), self._do_import, sources, dest_path
         )
 
     # Import job
 
     async def _do_import(self, sources: Iterable[str], dest: FsPath) -> None:
         # The file list is used in the error handler
-        files = []
+        files: Any = []
+        errors: ImportErrors | list[PermissionError]
         try:
             # Get the list of files to import with the corresponding size
             files, total_size, errors = await self._get_files_from_sources(sources, dest)
@@ -808,11 +859,11 @@ class FilesWidget(QWidget, Ui_FilesWidget):
                     loading_dialog.show()
 
                     # Actually perform the import
-                    errors = await self._import_all(files, loading_dialog)
+                    errors = await self._import_all(files, cast(LoadingWidget, loading_dialog))
 
                 finally:
                     loading_dialog.hide()
-                    loading_dialog.setParent(None)
+                    loading_dialog.setParent(None)  # type: ignore[call-overload]
 
                 # Process the errors
                 if errors:
@@ -888,9 +939,9 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         total_size = 0
         # Loop over sources and make sure to work with trio paths
         for source in sources:
-            source = trio.Path(source)
+            source_path = trio.Path(source)
             # Aggregate the results
-            source_files, source_size, source_errors = await self._get_files(source, dest)
+            source_files, source_size, source_errors = await self._get_files(source_path, dest)
             files.extend(source_files)
             errors.extend(source_errors)
             total_size += source_size
@@ -902,7 +953,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         # Initialize current size
         errors = []
         current_size = 0
-        loading_dialog.center_widget.set_progress(current_size)
+        loading_dialog.center_widget.set_progress(current_size)  # type: ignore[attr-defined]
 
         # Loop over files to import
         for source, dest in files:
@@ -921,6 +972,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
                 with trio.CancelScope(shield=True):
                     # Remove the last partially written file
                     to_delete = [(dest, FileType.File)]
+                    assert self.workspace_fs is not None
                     await _do_delete(self.workspace_fs, to_delete, silent=True)
                 raise
 
@@ -931,10 +983,11 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         self, source: trio.Path, dest: FsPath, loading_dialog: LoadingWidget, current_size: int
     ) -> int:
         # Update loading widget
-        loading_dialog.center_widget.set_current_file(source.name)
+        loading_dialog.center_widget.set_current_file(source.name)  # type: ignore[attr-defined]
 
         # Create parent directory
         if dest.parent != FsPath("/"):
+            assert self.workspace_fs is not None
             await self.workspace_fs.mkdir(dest.parent, parents=True, exist_ok=True)
 
         # Open the file to import
@@ -944,6 +997,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             name_we, *suffixes = dest.name.str.split(".")
             # Count starts at 2 (1 would be the file without a number)
             count = 2
+            assert self.workspace_fs is not None
             while await self.workspace_fs.exists(dest):
                 # Create the new file name by adding the count ("myfile.txt" becomes "myfile (2).txt")
                 new_file_name = EntryName(".".join([f"{name_we} ({count})", *suffixes]))
@@ -965,31 +1019,33 @@ class FilesWidget(QWidget, Ui_FilesWidget):
 
                     # Update the size
                     read_size += len(chunk)
-                    loading_dialog.center_widget.set_progress(current_size + read_size)
+                    loading_dialog.center_widget.set_progress(current_size + read_size)  # type: ignore[attr-defined]
 
         # Update and return the current size
         current_size += read_size + 1
-        loading_dialog.center_widget.set_progress(current_size)
+        loading_dialog.center_widget.set_progress(current_size)  # type: ignore[attr-defined]
         return current_size
 
-    def on_table_files_file_moved(self, file_type, file_name, target_name):
+    def on_table_files_file_moved(
+        self, file_type: FileType, file_name: str, target_name: str
+    ) -> None:
         src_path = self.current_directory / file_name
-        target_dir = ""
+        target_dir_path: FsPath
         if target_name == "..":
-            target_dir = self.current_directory.parent
+            target_dir_path = self.current_directory.parent
         else:
-            target_dir = self.current_directory / target_name
+            target_dir_path = self.current_directory / target_name
         self.jobs_ctx.submit_job(
             (self, "move_success"),
             (self, "move_error"),
             _do_move_files,
             workspace_fs=self.workspace_fs,
-            target_dir=target_dir,
+            target_dir=target_dir_path,
             source_files=[(src_path, file_type)],
             source_workspace=self.workspace_fs,
         )
 
-    def filter_files(self, pattern):
+    def filter_files(self, pattern: str) -> None:
         pattern = pattern.lower()
         for i in range(self.table_files.rowCount()):
             file_type = self.table_files.item(i, 0).data(TYPE_DATA_INDEX)
@@ -1000,7 +1056,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
                 else:
                     self.table_files.setRowHidden(i, False)
 
-    def create_folder_clicked(self):
+    def create_folder_clicked(self) -> None:
         folder_name = get_text_input(
             self,
             _("TEXT_FILE_CREATE_FOLDER_TITLE"),
@@ -1020,34 +1076,35 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             path=self.current_directory / folder_name,
         )
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key_Delete:
             self.delete_files()
 
-    def _on_rename_success(self, job):
+    def _on_rename_success(self, job: QtToTrioJob) -> None:
         self.reset()
 
-    def _on_rename_error(self, job):
+    def _on_rename_error(self, job: QtToTrioJob) -> None:
         if not getattr(job.exc, "params", None):
             return
-        if job.exc.params.get("multi"):
+        if job.exc.params.get("multi"):  # type: ignore[union-attr]
             show_error(self, _("TEXT_FILE_RENAME_MULTIPLE_ERROR"), exception=job.exc)
         else:
             show_error(self, _("TEXT_FILE_RENAME_ERROR"), exception=job.exc)
 
-    def _on_delete_success(self, job):
+    def _on_delete_success(self, job: QtToTrioJob) -> None:
         self.reset()
 
-    def _on_delete_error(self, job):
+    def _on_delete_error(self, job: QtToTrioJob) -> None:
         if not getattr(job.exc, "params", None):
             return
-        if job.exc.params.get("multi"):
+        if job.exc.params.get("multi"):  # type: ignore[union-attr]
             show_error(self, _("TEXT_FILE_DELETE_MULTIPLE_ERROR"), exception=job.exc)
         else:
             show_error(self, _("TEXT_FILE_DELETE_ERROR"), exception=job.exc)
 
-    def _on_folder_stat_success(self, job):
+    def _on_folder_stat_success(self, job: QtToTrioJob) -> None:
         # Extract job information
+        assert job.ret is not None
         directory, directory_id, files_stats, default_selection = job.ret
         # Ignore old refresh jobs
         if self.current_directory != directory:
@@ -1120,7 +1177,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         self.label_elements.show()
         self.folder_changed.emit(workspace_name, str(self.current_directory))
 
-    def _on_folder_stat_error(self, job):
+    def _on_folder_stat_error(self, job: QtToTrioJob) -> None:
         self.table_files.clear()
         self.spinner.hide()
         self.table_files.setEnabled(True)
@@ -1135,16 +1192,18 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         else:
             self.table_files.add_parent_folder()
 
-    def _on_folder_create_success(self, job):
+    def _on_folder_create_success(self, job: QtToTrioJob) -> None:
         pass
 
-    def _on_folder_create_error(self, job):
+    def _on_folder_create_error(self, job: QtToTrioJob) -> None:
         if job.status == "already-exists":
             show_error(self, _("TEXT_FILE_FOLDER_CREATE_ERROR_ALREADY_EXISTS"))
         else:
             show_error(self, _("TEXT_FILE_FOLDER_CREATE_ERROR_UNKNOWN"))
 
-    def _on_fs_entry_downsynced(self, event, workspace_id=None, id=None):
+    def _on_fs_entry_downsynced(
+        self, event: QEvent, workspace_id: Optional[EntryID] = None, id: Optional[EntryID] = None
+    ) -> None:
         # No workspace FS
         if not self.workspace_fs:
             return
@@ -1160,7 +1219,9 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             self.reload()
             return
 
-    def _on_fs_entry_synced(self, event, id, workspace_id=None):
+    def _on_fs_entry_synced(
+        self, event: QEvent, id: EntryID, workspace_id: Optional[EntryID] = None
+    ) -> None:
         if not self.workspace_fs:
             return
 
@@ -1169,7 +1230,9 @@ class FilesWidget(QWidget, Ui_FilesWidget):
 
         self.table_files.set_file_status(id, synced=True, confined=False)
 
-    def _on_fs_entry_updated(self, event, workspace_id=None, id=None):
+    def _on_fs_entry_updated(
+        self, event: QEvent, workspace_id: Optional[EntryID] = None, id: Optional[EntryID] = None
+    ) -> None:
         assert id is not None
         # No workspace FS
         if not self.workspace_fs:
@@ -1190,7 +1253,7 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             self.reload()
             return
 
-    def _on_sharing_updated(self, event, new_entry, previous_entry):
+    def _on_sharing_updated(self, event: QEvent, new_entry: Any, previous_entry: Any) -> None:
         if new_entry is None or new_entry.role is None:
             # Sharing revoked
             show_error(
@@ -1213,8 +1276,14 @@ class FilesWidget(QWidget, Ui_FilesWidget):
                 )
 
     def _on_reload_timestamped_requested(
-        self, timestamp, path, file_type, open_after_load, close_after_remount, reload_after_remount
-    ):
+        self,
+        timestamp: DateTime,
+        path: FsPath,
+        file_type: FileType,
+        open_after_load: bool,
+        close_after_remount: bool,
+        reload_after_remount: bool,
+    ) -> None:
         self.jobs_ctx.submit_job(
             (self, "reload_timestamped_success"),
             (self, "reload_timestamped_error"),
@@ -1229,7 +1298,8 @@ class FilesWidget(QWidget, Ui_FilesWidget):
             reload_after_remount=reload_after_remount,
         )
 
-    def _on_reload_timestamped_success(self, job):
+    def _on_reload_timestamped_success(self, job: QtToTrioJob) -> None:
+        assert job.ret is not None
         (
             workspace_fs,
             path,
@@ -1247,5 +1317,5 @@ class FilesWidget(QWidget, Ui_FilesWidget):
         if open_after_load:
             self.desktop_open_files(path.name)
 
-    def _on_reload_timestamped_error(self, job):
-        raise job.exc
+    def _on_reload_timestamped_error(self, job: QtToTrioJob) -> None:
+        raise job.exc  # type: ignore[misc]

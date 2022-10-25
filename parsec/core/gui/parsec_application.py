@@ -44,28 +44,28 @@ class ParsecApp(QApplication):
             # seemingly the only event we can use for this particular case,
             # ApplicationStateChange not being specific enough.
             self.get_main_window().show_top()
-        if e.type() != QEvent.FileOpen or e.url().scheme() != "parsec": # type: ignore[attr-defined]
+        if e.type() != QEvent.FileOpen or e.url().scheme() != "parsec":  # type: ignore[attr-defined]
             return super().event(e)
         try:
             # We can ignore the type error here, this is handled by the try/except
-            url = e.url().url() # type: ignore[attr-defined]
+            url = e.url().url()  # type: ignore[attr-defined]
             mw = self.get_main_window()
             if not mw:
                 pass
             else:
-                mw.new_instance_needed.emit(url) # type: ignore[attr-defined]
+                mw.new_instance_needed.emit(url)  # type: ignore[attr-defined]
         except Exception:
             logger.exception("Url handling failed")
 
         return True
 
-    def load_stylesheet(self, res: str =":/styles/styles/main.css") -> None:
+    def load_stylesheet(self, res: str = ":/styles/styles/main.css") -> None:
         rc = QFile(res)
         rc.open(QFile.ReadOnly)
         content = rc.readAll().data()
         self.setStyleSheet(str(content, "utf-8"))
 
-    def load_font(self, font: str ="Montserrat") -> None:
+    def load_font(self, font: str = "Montserrat") -> None:
         QFontDatabase.addApplicationFont(":/fonts/fonts/Montserrat.ttf")
         QFontDatabase.addApplicationFont(":/fonts/fonts/Roboto-Regular.ttf")
         f = QFont(font)

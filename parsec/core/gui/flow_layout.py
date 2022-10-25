@@ -1,30 +1,30 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
 from __future__ import annotations
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 from PyQt5.QtCore import Qt, QRect, QPoint, QSize
-from PyQt5.QtWidgets import QLayout, QLayoutItem, QStyle, QSizePolicy, QWidget
+from PyQt5.QtWidgets import QLayout, QStyle, QSizePolicy, QWidget
 
 
 class FlowLayout(QLayout):
-    def __init__(self, spacing: int =10, parent: Optional[QWidget] =None) -> None:
+    def __init__(self, spacing: int = 10, parent: Optional[QWidget] = None) -> None:
         assert parent is not None
         super().__init__(parent)
         # This is a property
-        self.spacing = spacing # type: ignore[assignment]
+        self.spacing = spacing  # type: ignore[assignment]
         self.items: list[Any] = []
 
     def addItem(self, item: Any) -> None:
         self.items.append(item)
 
     def horizontalSpacing(self) -> Optional[int]:
-        if self.spacing >= 0: # type: ignore[operator]
-            return self.spacing # type: ignore[return-value]
+        if self.spacing >= 0:  # type: ignore[operator]
+            return self.spacing  # type: ignore[return-value]
         return self._smart_spacing(QStyle.PM_LayoutHorizontalSpacing)
 
     def verticalSpacing(self) -> Optional[int]:
-        if self.spacing >= 0: # type: ignore[operator]
-            return self.spacing # type: ignore[return-value]
+        if self.spacing >= 0:  # type: ignore[operator]
+            return self.spacing  # type: ignore[return-value]
         return self._smart_spacing(QStyle.PM_LayoutVerticalSpacing)
 
     def count(self) -> int:
@@ -93,12 +93,12 @@ class FlowLayout(QLayout):
             space_y = self.verticalSpacing()
             if space_y == -1:
                 space_y = w.style().layoutSpacing(
-                    QSizePolicy.QPushButton, QSizePolicy.QPushButton, Qt.Vertical
+                    QSizePolicy.QPushButton, QSizePolicy.QPushButton, Qt.Vertical  # type: ignore[attr-defined]
                 )
             next_x = x + item.sizeHint().width() + space_x
             if next_x - space_x > rect.right() and line_height > 0:
                 x = rect.x()
-                y = y + line_height + space_y # type: ignore[operator]
+                y = y + line_height + space_y  # type: ignore[operator]
                 next_x = x + item.sizeHint().width() + space_x
                 line_height = 0
             if not test_only:

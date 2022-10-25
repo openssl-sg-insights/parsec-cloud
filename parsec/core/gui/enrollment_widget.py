@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import textwrap
+from typing import Callable, Union, cast
 
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QIcon, QColor
@@ -9,7 +10,9 @@ from PyQt5.QtWidgets import QWidget
 
 from parsec.api.protocol import UserProfile, HumanHandle, DeviceLabel
 from parsec.core.backend_connection.exceptions import BackendConnectionError
+from parsec.core.gui.greet_user_widget import Any, Optional
 from parsec.core.gui.trio_jobs import QtToTrioJob
+from parsec.core.logged_core import LoggedCore
 
 from parsec.core.types import BackendPkiEnrollmentAddr
 
@@ -30,13 +33,22 @@ from parsec.core.gui.snackbar_widget import SnackbarManager
 from parsec.core.gui.ui.enrollment_widget import Ui_EnrollmentWidget
 from parsec.core.gui.ui.enrollment_button import Ui_EnrollmentButton
 from parsec.core.gui.ui.greet_user_check_info_widget import Ui_GreetUserCheckInfoWidget
+from parsec.event_bus import EventBus, EventCallback
+
+PENDING_TYPE = Union[
+    PkiEnrollementAccepterInvalidSubmittedCtx, PkiEnrollementAccepterValidSubmittedCtx
+]
 
 
 class AcceptCheckInfoWidget(QWidget, Ui_GreetUserCheckInfoWidget):
     succeeded = pyqtSignal()
     failed = pyqtSignal(object)
 
-    def __init__(self, pending, user_profile_outsider_allowed=False):
+    def __init__(
+        self,
+        pending: PkiEnrollementAccepterValidSubmittedCtx,
+        user_profile_outsider_allowed: bool = False,
+    ) -> None:
         super().__init__()
         self.setupUi(self)
 
@@ -79,7 +91,7 @@ class AcceptCheckInfoWidget(QWidget, Ui_GreetUserCheckInfoWidget):
 
         self.button_create_user.clicked.connect(self._on_create_user_clicked)
 
-    def check_infos(self, _=None):
+    def check_infos(self, _: Optional[Any] = None) -> None:
         if (
             self.line_edit_user_full_name.is_input_valid()
             and self.line_edit_device.is_input_valid()
@@ -91,31 +103,31 @@ class AcceptCheckInfoWidget(QWidget, Ui_GreetUserCheckInfoWidget):
             self.button_create_user.setDisabled(True)
 
     @property
-    def device_label(self):
+    def device_label(self) -> DeviceLabel:
         return DeviceLabel(self.line_edit_device.text())
 
     @property
-    def profile(self):
+    def profile(self) -> Any:  # type: ignore[misc]
         return self.combo_profile.currentData()
 
     @property
-    def human_handle(self):
+    def human_handle(self) -> HumanHandle:
         return HumanHandle(
             label=self.line_edit_user_full_name.clean_text(), email=self.line_edit_user_email.text()
         )
 
-    def _on_create_user_clicked(self):
-        self.dialog.accept()
+    def _on_create_user_clicked(self) -> None:
+        self.dialog.accept()  # type: ignore[attr-defined]
 
     @classmethod
-    def show_modal(cls, enrollment_info, parent, on_finished, user_profile_outsider_allowed):
+    def show_modal(cls, enrollment_info: PkiEnrollementAccepterValidSubmittedCtx, parent: QWidget, on_finished: Callable[..., Any], user_profile_outsider_allowed: bool) -> AcceptCheckInfoWidget:  # type: ignore[misc]
         w = cls(enrollment_info, user_profile_outsider_allowed)
         d = GreyedDialog(
             w, translate("TEXT_ENROLLMENT_ACCEPT_CHECK_INFO_TITLE"), parent=parent, width=800
         )
-        w.dialog = d
+        w.dialog = d  # type: ignore[attr-defined]
 
-        def _on_finished(result):
+        def _on_finished(result: object) -> Callable[[object, AcceptCheckInfoWidget], Any]:
             return on_finished(result, w)
 
         d.finished.connect(_on_finished)
@@ -129,10 +141,10 @@ class EnrollmentButton(QWidget, Ui_EnrollmentButton):
     accept_clicked = pyqtSignal(QWidget)
     reject_clicked = pyqtSignal(QWidget)
 
-    def __init__(self, pending):
+    def __init__(self, pending: PENDING_TYPE):
         super().__init__()
         self.setupUi(self)
-        self.pending = pending
+        self.pending: PENDING_TYPE = pending
         accept_pix = Pixmap(":/icons/images/material/done.svg")
         accept_pix.replace_color(QColor(0x00, 0x00, 0x00), QColor(0xFF, 0xFF, 0xFF))
         reject_pix = Pixmap(":/icons/images/material/clear.svg")
@@ -145,10 +157,13 @@ class EnrollmentButton(QWidget, Ui_EnrollmentButton):
             if self.pending.submitter_x509_certificate:
                 self.widget_cert_infos.setVisible(True)
                 self.widget_cert_error.setVisible(False)
+                assert self.pending.submitter_x509_certificate.subject_common_name is not None
                 self.label_name.setText(self.pending.submitter_x509_certificate.subject_common_name)
+                assert self.pending.submitter_x509_certificate.subject_email_address is not None
                 self.label_email.setText(
                     self.pending.submitter_x509_certificate.subject_email_address
                 )
+                assert self.pending.submitter_x509_certificate.issuer_common_name is not None
                 self.label_issuer.setText(
                     self.pending.submitter_x509_certificate.issuer_common_name
                 )
@@ -167,8 +182,11 @@ class EnrollmentButton(QWidget, Ui_EnrollmentButton):
             self.widget_cert_infos.setVisible(True)
             self.widget_cert_error.setVisible(False)
             self.button_accept.setVisible(True)
+            assert self.pending.submitter_x509_certificate.subject_common_name is not None
             self.label_name.setText(self.pending.submitter_x509_certificate.subject_common_name)
+            assert self.pending.submitter_x509_certificate.subject_email_address is not None
             self.label_email.setText(self.pending.submitter_x509_certificate.subject_email_address)
+            assert self.pending.submitter_x509_certificate.issuer_common_name is not None
             self.label_issuer.setText(self.pending.submitter_x509_certificate.issuer_common_name)
             self.label_cert_validity.setStyleSheet("#label_cert_validity { color: #8BC34A; }")
             self.label_cert_validity.setText(
@@ -178,7 +196,7 @@ class EnrollmentButton(QWidget, Ui_EnrollmentButton):
         self.button_accept.clicked.connect(lambda: self.accept_clicked.emit(self))
         self.button_reject.clicked.connect(lambda: self.reject_clicked.emit(self))
 
-    def set_buttons_enabled(self, enabled):
+    def set_buttons_enabled(self, enabled: bool) -> None:
         self.button_accept.setEnabled(enabled)
         self.button_reject.setEnabled(enabled)
 
@@ -187,7 +205,9 @@ class EnrollmentWidget(QWidget, Ui_EnrollmentWidget):
     list_success = pyqtSignal(QtToTrioJob)
     list_failure = pyqtSignal(QtToTrioJob)
 
-    def __init__(self, core, jobs_ctx, event_bus, *args, **kwargs):
+    def __init__(
+        self, core: LoggedCore, jobs_ctx: Any, event_bus: EventBus, *args: Any, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.setupUi(self)
         self.core = core
@@ -199,7 +219,7 @@ class EnrollmentWidget(QWidget, Ui_EnrollmentWidget):
         self.button_get_enrollment_addr.clicked.connect(self._on_get_enrollment_addr_clicked)
         self.current_job = None
 
-    def _on_get_enrollment_addr_clicked(self):
+    def _on_get_enrollment_addr_clicked(self) -> None:
         ba = BackendPkiEnrollmentAddr.build(
             self.core.device.organization_addr.get_backend_addr(),
             self.core.device.organization_addr.organization_id,
@@ -207,27 +227,31 @@ class EnrollmentWidget(QWidget, Ui_EnrollmentWidget):
         desktop.copy_to_clipboard(ba.to_url())
         SnackbarManager.inform(translate("TEXT_ENROLLMENT_ADDR_COPIED_TO_CLIPBOARD"))
 
-    def showEvent(self, _):
-        self.event_bus.connect(CoreEvent.PKI_ENROLLMENTS_UPDATED, self._on_updated)
+    def showEvent(self, _: Any) -> None:
+        self.event_bus.connect(
+            CoreEvent.PKI_ENROLLMENTS_UPDATED, cast(EventCallback, self._on_updated)
+        )
         self.reset()
 
-    def hideEvent(self, _):
+    def hideEvent(self, _: Any) -> None:
         try:
-            self.event_bus.disconnect(CoreEvent.PKI_ENROLLMENTS_UPDATED, self._on_updated)
+            self.event_bus.disconnect(
+                CoreEvent.PKI_ENROLLMENTS_UPDATED, cast(EventCallback, self._on_updated)
+            )
         except ValueError:
             pass
 
-    def _on_updated(self, _):
+    def _on_updated(self, _: Any) -> None:
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         if self.current_job is not None and not self.current_job.is_finished():
             return
         self.current_job = self.jobs_ctx.submit_job(
             (self, "list_success"), (self, "list_failure"), self.list_pending_enrollments
         )
 
-    def clear_layout(self):
+    def clear_layout(self) -> None:
         while self.main_layout.count() != 0:
             item = self.main_layout.takeAt(0)
             if item and item.widget():
@@ -236,7 +260,7 @@ class EnrollmentWidget(QWidget, Ui_EnrollmentWidget):
                 w.hide()
                 w.setParent(None)
 
-    async def list_pending_enrollments(self):
+    async def list_pending_enrollments(self) -> None:
         self.label_empty_list.hide()
         self.clear_layout()
 
@@ -257,8 +281,8 @@ class EnrollmentWidget(QWidget, Ui_EnrollmentWidget):
             eb.reject_clicked.connect(self._on_reject_clicked)
             self.main_layout.addWidget(eb)
 
-    def _on_accept_clicked(self, eb):
-        def _on_finished(status, dialog):
+    def _on_accept_clicked(self, eb: Any) -> None:
+        def _on_finished(status: Any, dialog: Any) -> None:
             if not status:
                 eb.set_buttons_enabled(True)
             else:
@@ -280,13 +304,19 @@ class EnrollmentWidget(QWidget, Ui_EnrollmentWidget):
             user_profile_outsider_allowed=self.organization_config.user_profile_outsider_allowed,
         )
 
-    def _on_reject_clicked(self, rw):
+    def _on_reject_clicked(self, rw: Any) -> None:
         rw.set_buttons_enabled(False)
         self.jobs_ctx.submit_job(None, None, self.reject_recruit, enrollment_button=rw)
 
-    async def accept_recruit(self, enrollment_button, human_handle, device_label, profile):
+    async def accept_recruit(
+        self,
+        enrollment_button: EnrollmentButton,
+        human_handle: HumanHandle,
+        device_label: DeviceLabel,
+        profile: UserProfile,
+    ) -> None:
         try:
-            await enrollment_button.pending.accept(
+            await enrollment_button.pending.accept(  # type: ignore[union-attr]
                 author=self.core.device,
                 device_label=device_label,
                 human_handle=human_handle,
@@ -299,9 +329,9 @@ class EnrollmentWidget(QWidget, Ui_EnrollmentWidget):
             SnackbarManager.inform(translate("TEXT_ENROLLMENT_ACCEPT_SUCCESS"))
             self.main_layout.removeWidget(enrollment_button)
             enrollment_button.hide()
-            enrollment_button.setParent(None)
+            enrollment_button.setParent(None)  # type: ignore[call-overload]
 
-    async def reject_recruit(self, enrollment_button):
+    async def reject_recruit(self, enrollment_button: EnrollmentButton) -> None:
         try:
             await enrollment_button.pending.reject()
         except Exception:
@@ -311,4 +341,4 @@ class EnrollmentWidget(QWidget, Ui_EnrollmentWidget):
             SnackbarManager.inform(translate("TEXT_ENROLLMENT_REJECT_SUCCESS"))
             self.main_layout.removeWidget(enrollment_button)
             enrollment_button.hide()
-            enrollment_button.setParent(None)
+            enrollment_button.setParent(None)  # type: ignore[call-overload]

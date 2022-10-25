@@ -1,13 +1,23 @@
 # Parsec Cloud (https://parsec.cloud) Copyright (c) AGPL-3.0 2016-present Scille SAS
 from __future__ import annotations
+from typing import Any, Optional, cast
 
 from parsec._parsec import DateTime
 import pathlib
 import sys
 from enum import IntEnum
 import attr
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QIcon, QColor, QKeySequence
+from PyQt5.QtCore import QEvent, QModelIndex, QPoint, Qt, pyqtSignal
+from PyQt5.QtGui import (
+    QDragMoveEvent,
+    QDropEvent,
+    QIcon,
+    QColor,
+    QKeyEvent,
+    QKeySequence,
+    QPainter,
+    QResizeEvent,
+)
 from PyQt5.QtWidgets import (
     QTableWidget,
     QHeaderView,
@@ -18,6 +28,8 @@ from PyQt5.QtWidgets import (
     QTableWidgetSelectionRange,
     QGraphicsDropShadowEffect,
 )
+from parsec.core import CoreConfig
+from parsec.core.fs import WorkspaceFS
 
 from parsec.core.types import EntryID, WorkspaceRole
 from parsec.core.gui.lang import translate as _, format_datetime
@@ -42,7 +54,7 @@ class PasteStatus:
         Disabled = 1
         Enabled = 2
 
-    def __init__(self, status, source_workspace=None):
+    def __init__(self, status: PasteStatus.Status, source_workspace: Optional[WorkspaceFS] = None):
         self.source_workspace = source_workspace
         self.status = status
 
@@ -56,14 +68,14 @@ class Column(IntEnum):
 
 
 class ItemDelegate(QStyledItemDelegate):
-    def paint(self, painter, option, index):
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         view_option = QStyleOptionViewItem(option)
         view_option.decorationAlignment |= Qt.AlignHCenter
         # Qt tries to be nice and adds a lovely background color
         # on the focused item. Since we select items by rows and not
         # individually, we don't want that, so we remove the focus
         if option.state & QStyle.State_HasFocus:
-            view_option.state &= ~QStyle.State_HasFocus
+            view_option.state &= ~QStyle.State_HasFocus  # type: ignore[assignment]
         if index.data(COPY_STATUS_DATA_INDEX):
             view_option.font.setItalic(True)
         super().paint(painter, view_option, index)
@@ -100,11 +112,11 @@ class FileTable(QTableWidget):
     show_current_folder_history_clicked = pyqtSignal()
     show_current_folder_status_clicked = pyqtSignal()
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.previous_selection = []
+        self.previous_selection: list[FileTableItem] = []
         self.setColumnCount(len(Column))
-        self.config = None
+        self.config: Optional[CoreConfig] = None
         self.is_timestamped_workspace = False
 
         h_header = self.horizontalHeader()
@@ -141,39 +153,42 @@ class FileTable(QTableWidget):
         self.setGraphicsEffect(effect)
 
     @property
-    def current_user_role(self):
+    def current_user_role(self) -> WorkspaceRole:
         return self._current_user_role
 
     @current_user_role.setter
-    def current_user_role(self, role):
+    def current_user_role(self, role: WorkspaceRole) -> None:
         self._current_user_role = role
 
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self.setColumnWidth(
             Column.NAME,
             max(event.size().width() - FileTable.FIXED_COL_SIZE, FileTable.NAME_COL_MIN_SIZE),
         )
 
-    def set_rows_cut(self, rows):
+    def set_rows_cut(self, rows: list[int]) -> None:
         for row in range(self.rowCount()):
             for col in Column:
                 item = self.item(row, col)
+                assert item is not None
                 item.setData(COPY_STATUS_DATA_INDEX, row in rows)
 
-    def reset_cut_status(self, files):
+    def reset_cut_status(self, files: list[str]) -> None:
         for row in range(self.rowCount()):
             item = self.item(row, Column.NAME)
+            assert item is not None
             file_name = item.data(NAME_DATA_INDEX)
             if file_name in files:
                 for col in Column:
                     item = self.item(row, col)
+                    assert item is not None
                     item.setData(COPY_STATUS_DATA_INDEX, False)
                 files.remove(file_name)
             if not len(files):
                 return
 
-    def keyReleaseEvent(self, event):
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
         if not self.is_read_only():
             if event.matches(QKeySequence.Copy):
                 self.copy_clicked.emit()
@@ -183,7 +198,7 @@ class FileTable(QTableWidget):
                 if self.paste_status.status == PasteStatus.Status.Enabled:
                     self.paste_clicked.emit()
 
-    def selected_files(self):
+    def selected_files(self) -> list[SelectedFile]:
         files = []
         # As it turns out, Qt can return several overlapping ranges
         # Fix the overlap by using a sorted set
@@ -191,6 +206,7 @@ class FileTable(QTableWidget):
         for row in sorted(rows):
             item = self.item(row, Column.NAME)
 
+            assert item is not None
             item_type = item.data(TYPE_DATA_INDEX)
             if not item_type or (item_type != FileType.Folder and item_type != FileType.File):
                 continue
@@ -205,17 +221,17 @@ class FileTable(QTableWidget):
             )
         return files
 
-    def has_file(self, entry_id):
+    def has_file(self, entry_id: EntryID) -> bool:
         return any(
-            entry_id.hex == self.item(row, Column.NAME).data(ENTRY_ID_DATA_INDEX)
+            entry_id.hex == self.item(row, Column.NAME).data(ENTRY_ID_DATA_INDEX)  # type: ignore[union-attr]
             for row in range(self.rowCount())
-            if self.item(row, Column.NAME)
+            if self.item(row, Column.NAME) is not None and self.item(row, Column.NAME)
         )
 
-    def is_read_only(self):
+    def is_read_only(self) -> bool:
         return self.current_user_role == WorkspaceRole.READER
 
-    def show_context_menu(self, pos):
+    def show_context_menu(self, pos: QPoint) -> None:
         global_pos = self.mapToGlobal(pos)
 
         selected = self.selected_files()
@@ -285,8 +301,9 @@ class FileTable(QTableWidget):
 
         menu.exec_(global_pos)
 
-    def item_double_clicked(self, row, column):
+    def item_double_clicked(self, row: int, column: int) -> None:
         item = self.item(row, Column.NAME)
+        assert item is not None
         file_type = item.data(TYPE_DATA_INDEX)
         try:
             self.item_activated.emit(file_type, item.data(NAME_DATA_INDEX))
@@ -295,8 +312,9 @@ class FileTable(QTableWidget):
             # the item has been removed.
             pass
 
-    def item_clicked(self, row, column):
+    def item_clicked(self, row: int, column: int) -> None:
         item = self.item(row, Column.NAME)
+        assert item is not None
         file_type = item.data(TYPE_DATA_INDEX)
         try:
             if file_type == FileType.ParentFolder or file_type == FileType.ParentWorkspace:
@@ -305,12 +323,14 @@ class FileTable(QTableWidget):
         except AttributeError:
             pass
 
-    def clear(self):
+    def clear(self) -> None:
         self.clearContents()
         self.setRowCount(0)
         self.previous_selection = []
 
-    def set_file_status(self, entry_id, synced=None, confined=None):
+    def set_file_status(
+        self, entry_id: EntryID, synced: Optional[Any] = None, confined: Optional[Any] = None
+    ) -> None:
         for i in range(1, self.rowCount()):
             item = self.item(i, 0)
             if item and item.data(ENTRY_ID_DATA_INDEX) == entry_id.hex:
@@ -319,12 +339,12 @@ class FileTable(QTableWidget):
                     or item.data(TYPE_DATA_INDEX) == FileType.Folder
                 ):
                     if confined is not None:
-                        item.confined = confined
+                        item.confined = confined  # type: ignore[attr-defined]
                     if synced is not None:
-                        item.is_synced = synced
+                        item.is_synced = synced  # type: ignore[attr-defined]
                 return
 
-    def change_selection(self):
+    def change_selection(self) -> None:
         selected = self.selectedItems()
         for item in self.previous_selection:
             if item.column() == Column.ICON:
@@ -343,10 +363,10 @@ class FileTable(QTableWidget):
                     p.replace_color(QColor(0, 0, 0), QColor(255, 255, 255))
                     item.setIcon(QIcon(p))
                 elif file_type == FileType.File or file_type == FileType.Folder:
-                    item.switch_icon()
-        self.previous_selection = selected
+                    cast(FileTableItem, item).switch_icon()
+        self.previous_selection = cast(list[FileTableItem], selected)
 
-    def add_parent_folder(self):
+    def add_parent_folder(self) -> None:
         row_idx = self.rowCount()
         self.insertRow(row_idx)
         items = []
@@ -365,7 +385,7 @@ class FileTable(QTableWidget):
             item.setFlags(Qt.ItemIsEnabled)
             self.setItem(row_idx, col, item)
 
-    def add_parent_workspace(self):
+    def add_parent_workspace(self) -> None:
         row_idx = self.rowCount()
         self.insertRow(row_idx)
         items = []
@@ -384,7 +404,15 @@ class FileTable(QTableWidget):
             item.setFlags(Qt.ItemIsEnabled)
             self.setItem(row_idx, col, item)
 
-    def add_folder(self, folder_name, entry_id, is_synced, is_confined, selected=False):
+    def add_folder(
+        self,
+        folder_name: Any,
+        entry_id: EntryID,
+        is_synced: bool,
+        is_confined: bool,
+        selected: bool = False,
+    ) -> None:
+        assert self.config is not None
         if is_confined and not self.config.gui_show_confined:
             return
         entry_id = entry_id.hex
@@ -402,12 +430,12 @@ class FileTable(QTableWidget):
         item.setData(ENTRY_ID_DATA_INDEX, entry_id)
         self.setItem(row_idx, Column.NAME, item)
         item = CustomTableItem()
-        item.setData(NAME_DATA_INDEX, DateTime(1970, 1, 1))
+        item.setData(NAME_DATA_INDEX, DateTime(1970, 1, 1, 0, 0, 0))
         item.setData(TYPE_DATA_INDEX, FileType.Folder)
         item.setData(ENTRY_ID_DATA_INDEX, entry_id)
         self.setItem(row_idx, Column.CREATED, item)
         item = CustomTableItem()
-        item.setData(NAME_DATA_INDEX, DateTime(1970, 1, 1))
+        item.setData(NAME_DATA_INDEX, DateTime(1970, 1, 1, 0, 0, 0))
         item.setData(TYPE_DATA_INDEX, FileType.Folder)
         item.setData(ENTRY_ID_DATA_INDEX, entry_id)
         self.setItem(row_idx, Column.UPDATED, item)
@@ -423,15 +451,16 @@ class FileTable(QTableWidget):
 
     def add_file(
         self,
-        file_name,
-        entry_id,
-        file_size,
-        created_on,
-        updated_on,
-        is_synced,
-        is_confined,
-        selected=False,
-    ):
+        file_name: Any,
+        entry_id: EntryID,
+        file_size: int,
+        created_on: DateTime,
+        updated_on: DateTime,
+        is_synced: bool,
+        is_confined: bool,
+        selected: bool = False,
+    ) -> None:
+        assert self.config is not None
         if is_confined and not self.config.gui_show_confined:
             return
         entry_id = entry_id.hex
@@ -470,7 +499,7 @@ class FileTable(QTableWidget):
                 QTableWidgetSelectionRange(row_idx, 0, row_idx, len(Column) - 1), True
             )
 
-    def add_inconsistency(self, file_name, entry_id):
+    def add_inconsistency(self, file_name: Any, entry_id: EntryID) -> None:
         inconsistency_color = QColor(255, 144, 155)
         row_idx = self.rowCount()
         entry_id = entry_id.hex
@@ -491,13 +520,13 @@ class FileTable(QTableWidget):
         item.setBackground(inconsistency_color)
         self.setItem(row_idx, Column.NAME, item)
         item = CustomTableItem()
-        item.setData(NAME_DATA_INDEX, DateTime(1970, 1, 1))
+        item.setData(NAME_DATA_INDEX, DateTime(1970, 1, 1, 0, 0, 0))
         item.setData(TYPE_DATA_INDEX, FileType.Inconsistency)
         item.setBackground(inconsistency_color)
         item.setData(ENTRY_ID_DATA_INDEX, entry_id)
         self.setItem(row_idx, Column.CREATED, item)
         item = CustomTableItem()
-        item.setData(NAME_DATA_INDEX, DateTime(1970, 1, 1))
+        item.setData(NAME_DATA_INDEX, DateTime(1970, 1, 1, 0, 0, 0))
         item.setData(TYPE_DATA_INDEX, FileType.Inconsistency)
         item.setData(ENTRY_ID_DATA_INDEX, entry_id)
         item.setBackground(inconsistency_color)
@@ -509,10 +538,10 @@ class FileTable(QTableWidget):
         item.setBackground(inconsistency_color)
         self.setItem(row_idx, Column.SIZE, item)
 
-    def dragEnterEvent(self, event):
+    def dragEnterEvent(self, event: QEvent) -> None:
         event.accept()
 
-    def dragMoveEvent(self, event):
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         if event.mimeData().hasUrls():
             event.accept()
         else:
@@ -529,7 +558,7 @@ class FileTable(QTableWidget):
             else:
                 event.ignore()
 
-    def dropEvent(self, event):
+    def dropEvent(self, event: QDropEvent) -> None:
         if self.is_read_only():
             show_error(self, _("TEXT_FILE_DROP_WORKSPACE_IS_READ_ONLY"))
             event.ignore()
@@ -548,7 +577,7 @@ class FileTable(QTableWidget):
             elif target_type == FileType.ParentFolder:
                 self.files_dropped.emit(files, "..")
             elif target_type == FileType.Folder:
-                self.files_dropped.emit(files, self.item(target_row, 1).text())
+                self.files_dropped.emit(files, self.item(target_row, 1).text())  # type: ignore[union-attr]
         else:
             if event.source() != self:
                 return
@@ -558,13 +587,13 @@ class FileTable(QTableWidget):
                 return
             if not self.item(target_row, Column.ICON):
                 return
-            file_type = self.item(target_row, Column.ICON).data(TYPE_DATA_INDEX)
-            target_name = self.item(target_row, Column.NAME).text()
+            file_type = self.item(target_row, Column.ICON).data(TYPE_DATA_INDEX)  # type: ignore[union-attr]
+            target_name = self.item(target_row, Column.NAME).text()  # type: ignore[union-attr]
 
             if file_type != FileType.ParentFolder and file_type != FileType.Folder:
                 return
             for row in rows:
-                file_name = self.item(row, Column.NAME).text()
+                file_name = self.item(row, Column.NAME).text()  # type: ignore[union-attr]
                 if file_type == FileType.ParentFolder:
                     self.file_moved.emit(FileType.Folder, file_name, "..")
                 else:

@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import pathlib
 from enum import IntEnum
+from typing import Any, Optional
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QTableWidgetItem
-from PyQt5.QtGui import QIcon, QPainter, QColor
+from PyQt5.QtGui import QIcon, QPainter, QColor, QPixmap
 
 from parsec.core.gui.lang import translate as _
 from parsec.core.gui.custom_widgets import Pixmap
@@ -26,7 +27,7 @@ class FileType(IntEnum):
 
 
 class CustomTableItem(QTableWidgetItem):
-    def __lt__(self, other):
+    def __lt__(self, other: CustomTableItem) -> bool:  # type: ignore[override]
         self_type = self.data(TYPE_DATA_INDEX)
         other_type = other.data(TYPE_DATA_INDEX)
         self_data = self.data(NAME_DATA_INDEX)
@@ -44,7 +45,9 @@ class IconTableItem(CustomTableItem):
     UNSYNCED_ICON = None
     CONFINED_ICON = None
 
-    def __init__(self, is_synced, is_confined, pixmap, *args, **kwargs):
+    def __init__(
+        self, is_synced: bool, is_confined: bool, pixmap: QPixmap, *args: Any, **kwargs: Any
+    ):
         super().__init__(*args, **kwargs)
         self.source = pixmap
         if not IconTableItem.CONFINED_ICON:
@@ -60,7 +63,7 @@ class IconTableItem(CustomTableItem):
         self._is_confined = is_confined
         self.switch_icon()
 
-    def switch_icon(self):
+    def switch_icon(self) -> None:
         icon = self._draw_pixmap(self.source, self.isSelected(), self.is_synced, self.is_confined)
         self.setIcon(QIcon(icon))
         if self.is_confined:
@@ -70,7 +73,9 @@ class IconTableItem(CustomTableItem):
         else:
             self.setToolTip(_("TEXT_FILE_ITEM_IS_NOT_SYNCED_TOOLTIP"))
 
-    def _draw_pixmap(self, source, selected, synced, confined):
+    def _draw_pixmap(
+        self, source: QPixmap, selected: bool, synced: bool, confined: bool
+    ) -> Optional[Pixmap]:
         color = QColor(0x99, 0x99, 0x99)
         if confined:
             color = QColor(0xDD, 0xDD, 0xDD)
@@ -80,34 +85,34 @@ class IconTableItem(CustomTableItem):
             color = QColor(0x33, 0x33, 0x33)
         p = Pixmap(source)
         if p.isNull():
-            return
+            return None
         p = Pixmap(p.scaled(120, 120, Qt.KeepAspectRatio))
         p.replace_color(QColor(0, 0, 0), color)
         painter = QPainter(p)
         if confined:
-            painter.drawPixmap(p.width() - 90, 0, 100, 100, IconTableItem.CONFINED_ICON)
+            painter.drawPixmap(p.width() - 90, 0, 100, 100, IconTableItem.CONFINED_ICON)  # type: ignore[arg-type]
         elif synced:
-            painter.drawPixmap(p.width() - 90, 0, 100, 100, IconTableItem.SYNCED_ICON)
+            painter.drawPixmap(p.width() - 90, 0, 100, 100, IconTableItem.SYNCED_ICON)  # type: ignore[arg-type]
         else:
-            painter.drawPixmap(p.width() - 90, 0, 100, 100, IconTableItem.UNSYNCED_ICON)
+            painter.drawPixmap(p.width() - 90, 0, 100, 100, IconTableItem.UNSYNCED_ICON)  # type: ignore[arg-type]
         painter.end()
         return p
 
     @property
-    def is_synced(self):
+    def is_synced(self) -> bool:
         return self._is_synced
 
     @is_synced.setter
-    def is_synced(self, value):
+    def is_synced(self, value: bool) -> None:
         self._is_synced = value
         self.switch_icon()
 
     @property
-    def is_confined(self):
+    def is_confined(self) -> bool:
         return self._is_confined
 
     @is_confined.setter
-    def is_confined(self, value):
+    def is_confined(self, value: bool) -> None:
         self._is_confined = value
         self.switch_icon()
 
@@ -321,13 +326,16 @@ class FileTableItem(IconTableItem):
         ".zip": "zip-compressed-files-extension",
     }
 
-    def __init__(self, is_synced, is_confined, file_name, *args, **kwargs):
+    def __init__(
+        self, is_synced: bool, is_confined: bool, file_name: str, *args: Any, **kwargs: Any
+    ) -> None:
         ext = pathlib.Path(file_name).suffix
         icon = self.EXTENSIONS.get(ext.lower(), "blank-file")
         super().__init__(
             is_synced,
             is_confined,
-            f":/file_ext/images/file_formats/{icon}.svg",
+            # FIXME: a `QPixmap` is expected here
+            f":/file_ext/images/file_formats/{icon}.svg",  # type: ignore[arg-type]
             "",
             *args,
             **kwargs,
@@ -336,18 +344,18 @@ class FileTableItem(IconTableItem):
 
 
 class FolderTableItem(IconTableItem):
-    def __init__(self, is_synced, is_confined, *args, **kwargs):
+    def __init__(self, is_synced: bool, is_confined: bool, *args: Any, **kwargs: Any) -> None:
         super().__init__(
-            is_synced, is_confined, ":/icons/images/material/folder_open.svg", "", *args, **kwargs
+            is_synced, is_confined, ":/icons/images/material/folder_open.svg", "", *args, **kwargs  # type: ignore[arg-type]
         )
         self.setData(NAME_DATA_INDEX, 0)
         self.setData(TYPE_DATA_INDEX, FileType.Folder)
 
 
 class InconsistencyTableItem(IconTableItem):
-    def __init__(self, is_synced, is_confined, *args, **kwargs):
+    def __init__(self, is_synced: bool, is_confined: bool, *args: Any, **kwargs: Any) -> None:
         super().__init__(
-            is_synced, is_confined, ":/icons/images/material/warning.svg", "", *args, **kwargs
+            is_synced, is_confined, ":/icons/images/material/warning.svg", "", *args, **kwargs  # type: ignore[arg-type]
         )
         self.setData(NAME_DATA_INDEX, 0)
         self.setData(TYPE_DATA_INDEX, FileType.Inconsistency)

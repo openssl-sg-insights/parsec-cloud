@@ -15,7 +15,9 @@ from PyQt5.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
 
 class SwitchButton(QAbstractButton):
-    def __init__(self, parent: Optional[QWidget] = None, track_radius: int =10, thumb_radius: int =8) -> None:
+    def __init__(
+        self, parent: Optional[QWidget] = None, track_radius: int = 10, thumb_radius: int = 8
+    ) -> None:
         super().__init__(parent=parent)
         self.setCheckable(True)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -52,7 +54,7 @@ class SwitchButton(QAbstractButton):
     def offset(self) -> int:
         return self._offset
 
-    @offset.setter # type: ignore[no-redef]
+    @offset.setter  # type: ignore[no-redef]
     def offset(self, value: int) -> None:
         self._offset = value
         self.update()
@@ -64,11 +66,11 @@ class SwitchButton(QAbstractButton):
 
     def setChecked(self, checked: bool) -> None:
         super().setChecked(checked)
-        self.offset = self._end_offset[checked]() # type: ignore[assignment]
+        self.offset = self._end_offset[checked]()  # type: ignore[assignment]
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        self.offset = self._end_offset[self.isChecked()]() # type: ignore[assignment]
+        self.offset = self._end_offset[self.isChecked()]()  # type: ignore[assignment]
 
     def paintEvent(self, event: QEvent) -> None:  # pylint: disable=invalid-name, unused-argument
         p = QPainter(self)
@@ -100,8 +102,8 @@ class SwitchButton(QAbstractButton):
         p.setBrush(thumb_brush)
         p.setOpacity(thumb_opacity)
         p.drawEllipse(
-                # `offset` is a property this is fine
-                self.offset - self._thumb_radius, # type: ignore[operator]
+            # `offset` is a property this is fine
+            self.offset - self._thumb_radius,  # type: ignore[operator]
             self._base_offset - self._thumb_radius,
             2 * self._thumb_radius,
             2 * self._thumb_radius,
@@ -114,7 +116,7 @@ class SwitchButton(QAbstractButton):
         p.drawText(
             QRectF(
                 # `offset` is a property this is fine
-                self.offset - self._thumb_radius,# type: ignore[operator]
+                self.offset - self._thumb_radius,  # type: ignore[operator]
                 self._base_offset - self._thumb_radius,
                 2 * self._thumb_radius,
                 2 * self._thumb_radius,

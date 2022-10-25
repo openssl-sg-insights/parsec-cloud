@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import threading
 from typing import (
+    Any,
     AsyncGenerator,
-    List,
+    Callable,
     Dict,
+    List,
+    Optional,
     OrderedDict,
     Tuple,
-    Callable,
-    Any,
 )
 from inspect import iscoroutinefunction, signature
 from contextlib import asynccontextmanager
@@ -19,7 +20,6 @@ from PyQt5.QtCore import QObject, pyqtBoundSignal
 from trio_typing import TaskStatus
 
 from parsec.core.fs import FSError
-from parsec.core.gui.workspaces_widget import Optional
 from parsec.core.mountpoint import MountpointError
 from parsec.utils import open_service_nursery, split_multi_error
 
