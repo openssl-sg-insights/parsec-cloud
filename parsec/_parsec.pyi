@@ -14,6 +14,7 @@ from parsec._parsec_pyi.crypto import (
     VerifyKey,
     PrivateKey,
     PublicKey,
+    generate_nonce,
 )
 
 from parsec._parsec_pyi.ids import (
@@ -50,6 +51,7 @@ from parsec._parsec_pyi.addrs import (
     BackendOrganizationBootstrapAddr,
     BackendOrganizationFileLinkAddr,
     BackendPkiEnrollmentAddr,
+    export_root_verify_key,
 )
 
 from parsec._parsec_pyi.local_manifest import (
@@ -464,6 +466,7 @@ __all__ = [
     "VerifyKey",
     "PrivateKey",
     "PublicKey",
+    "generate_nonce",
     # Ids
     "OrganizationID",
     "EntryID",
@@ -494,6 +497,7 @@ __all__ = [
     "BackendOrganizationBootstrapAddr",
     "BackendOrganizationFileLinkAddr",
     "BackendPkiEnrollmentAddr",
+    "export_root_verify_key",
     # Local Manifest
     "Chunk",
     "LocalFileManifest",
