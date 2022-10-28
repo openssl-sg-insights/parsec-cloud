@@ -5,8 +5,8 @@ from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QWidget
 from pathlib import Path, PurePath
 
+from parsec._parsec import SecretKey
 from parsec.api.protocol import DeviceLabel
-from parsec.crypto import derivate_secret_key_from_recovery_passphrase
 from parsec.core.backend_connection import BackendConnectionError, BackendNotAvailable
 from parsec.core.recovery import generate_new_device_from_recovery
 from parsec.core.local_device import (
@@ -18,6 +18,7 @@ from parsec.core.local_device import (
     LocalDeviceCryptoError,
     LocalDeviceNotFoundError,
 )
+from parsec.crypto import CryptoError
 from parsec.core.gui.authentication_choice_widget import AuthenticationChoiceWidget
 from parsec.core.gui.trio_jobs import QtToTrioJob, JobResultError
 from parsec.core.gui.lang import translate
@@ -57,9 +58,9 @@ class DeviceRecoveryImportPage1Widget(QWidget, Ui_DeviceRecoveryImportPage1Widge
 
     def _is_valid_passphrase(self, passphrase):
         try:
-            derivate_secret_key_from_recovery_passphrase(passphrase)
+            SecretKey.from_recovery_passphrase(passphrase)
             return True
-        except ValueError:
+        except CryptoError:
             return False
 
     def _on_passphrase_text_changed(self):
